@@ -2,7 +2,7 @@
 // @name         Site Redirector Pro
 // @name:zh-CN   网站重定向助手
 // @namespace    https://github.com/Jsaeron/site-redirector
-// @version      1.2.0
+// @version      1.3.0
 // @description  Block distracting websites with a cooldown timer and redirect to productive sites
 // @description:zh-CN  拦截分心网站，冷静倒计时后重定向到指定网站，帮助你保持专注
 // @author       Daniel
@@ -43,6 +43,13 @@
     // 如果不在黑名单中，直接退出
     if (!isBlocked(location.hostname)) {
         return;
+    }
+
+    // 检查临时绕过（选择继续摸鱼后 5 分钟内不再拦截）
+    const bypassKey = 'bypass_' + location.hostname;
+    const bypassExpire = GM_getValue(bypassKey, 0);
+    if (Date.now() < bypassExpire) {
+        return;  // 在绕过期内，不拦截
     }
     // =================================
 
@@ -191,6 +198,32 @@
                 color: #666;
             }
             .btn-secondary:hover { border-color: #888; color: #aaa; }
+            .choice-container { display: none; margin-top: 30px; }
+            .choice-title { font-size: 20px; margin-bottom: 20px; color: #aaa; }
+            .pills { display: flex; gap: 30px; justify-content: center; }
+            .pill {
+                padding: 20px 40px;
+                border-radius: 30px;
+                cursor: pointer;
+                transition: all 0.3s;
+                font-size: 16px;
+                font-weight: 600;
+                border: none;
+                min-width: 160px;
+            }
+            .pill-blue {
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                color: #fff;
+                box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+            }
+            .pill-blue:hover { transform: scale(1.05); box-shadow: 0 6px 20px rgba(102, 126, 234, 0.6); }
+            .pill-red {
+                background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+                color: #fff;
+                box-shadow: 0 4px 15px rgba(245, 87, 108, 0.4);
+            }
+            .pill-red:hover { transform: scale(1.05); box-shadow: 0 6px 20px rgba(245, 87, 108, 0.6); }
+            .pill-label { display: block; font-size: 12px; margin-top: 5px; opacity: 0.8; font-weight: normal; }
         </style>
     `;
 
@@ -201,9 +234,22 @@
             <div class="subtitle">${location.hostname}</div>
             <div class="count">这是你第 <strong>${count}</strong> 次被拦截</div>
             <div class="timer" id="countdown">${CONFIG.cooldown}</div>
-            <div class="hint">${CONFIG.cooldown}秒后跳转到工作页面</div>
-            <div class="actions">
+            <div class="hint" id="hint">${CONFIG.cooldown}秒冷静期后做出你的选择</div>
+            <div class="actions" id="actions">
                 <button class="btn btn-secondary" id="skip">算了，回去干活</button>
+            </div>
+            <div class="choice-container" id="choice">
+                <div class="choice-title">冷静期结束，做出你的选择</div>
+                <div class="pills">
+                    <button class="pill pill-blue" id="blue-pill">
+                        💼 回去干活
+                        <span class="pill-label">前往工作页面</span>
+                    </button>
+                    <button class="pill pill-red" id="red-pill">
+                        🎮 就要摸鱼
+                        <span class="pill-label">继续访问此网站</span>
+                    </button>
+                </div>
             </div>
             <div class="quote-container">
                 <div class="quote-text" id="quote">加载中...</div>
@@ -241,13 +287,33 @@
         countdownEl.textContent = remaining;
         if (remaining <= 0) {
             clearInterval(timer);
-            window.location.replace(CONFIG.target);
+            showChoice();
         }
     }, 1000);
 
-    // 直接跳转按钮
+    // 显示选择界面
+    function showChoice() {
+        document.getElementById('countdown').textContent = '⏰';
+        document.getElementById('hint').textContent = '时间到！做出你的选择';
+        document.getElementById('actions').style.display = 'none';
+        document.getElementById('choice').style.display = 'block';
+    }
+
+    // 直接跳转按钮（冷静期内）
     document.getElementById('skip').addEventListener('click', () => {
         clearInterval(timer);
         window.location.replace(CONFIG.target);
+    });
+
+    // 蓝色药丸：回去干活
+    document.getElementById('blue-pill').addEventListener('click', () => {
+        window.location.replace(CONFIG.target);
+    });
+
+    // 红色药丸：继续摸鱼（设置 5 分钟绕过）
+    document.getElementById('red-pill').addEventListener('click', () => {
+        const bypassKey = 'bypass_' + location.hostname;
+        GM_setValue(bypassKey, Date.now() + 5 * 60 * 1000);  // 5 分钟后过期
+        location.reload();
     });
 })();
