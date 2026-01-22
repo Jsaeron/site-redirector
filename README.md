@@ -22,7 +22,7 @@
 
 **方式一：从 Greasy Fork 安装**
 
-[![Install](https://img.shields.io/badge/Install-Greasy%20Fork-red)](https://greasyfork.org/scripts/xxx)
+[![Install](https://img.shields.io/badge/Install-Greasy%20Fork-red)](https://greasyfork.org/scripts/563551)
 
 **方式二：手动安装**
 
