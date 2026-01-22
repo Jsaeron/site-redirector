@@ -2,7 +2,7 @@
 // @name         Site Redirector Pro
 // @name:zh-CN   网站重定向助手
 // @namespace    https://github.com/Jsaeron/site-redirector
-// @version      1.4.0
+// @version      1.5.0
 // @description  Block distracting websites with a cooldown timer and redirect to productive sites
 // @description:zh-CN  拦截分心网站，冷静倒计时后重定向到指定网站，帮助你保持专注
 // @author       Daniel
@@ -74,6 +74,27 @@
     }
 
     const currentTheme = THEMES[getActiveTheme()];
+
+    // 随机标题文案（灵魂拷问 + 温和提醒）
+    const TITLES = [
+        // 灵魂拷问风格
+        '这真的是你想要的吗？',
+        '未来的你会感谢现在的决定',
+        '此刻的选择，定义你的一天',
+        '你的目标还记得吗？',
+        '时间正在流逝...',
+        '这是最好的时间利用方式吗？',
+        '你确定不会后悔吗？',
+        '想想你真正想成为的人',
+        // 温和提醒风格
+        '休息一下，想想再决定',
+        '深呼吸，冷静一下',
+        '给自己30秒思考时间',
+        '暂停一下，整理思绪',
+        '慢下来，听听内心的声音',
+        '这是一个选择的时刻',
+    ];
+    const randomTitle = TITLES[Math.floor(Math.random() * TITLES.length)];
 
     // 获取黑名单
     function getBlacklist() {
@@ -299,7 +320,7 @@
     document.body.innerHTML = `
         <div class="container">
             <div class="icon">🛑</div>
-            <div class="title">你确定要摸鱼吗？</div>
+            <div class="title">${randomTitle}</div>
             <div class="subtitle">${location.hostname}</div>
             <div class="count">这是你第 <strong>${count}</strong> 次被拦截</div>
             <div class="timer" id="countdown">${CONFIG.cooldown}</div>
