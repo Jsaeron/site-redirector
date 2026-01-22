@@ -2,18 +2,14 @@
 // @name         Site Redirector Pro
 // @name:zh-CN   网站重定向助手
 // @namespace    https://github.com/Jsaeron/site-redirector
-// @version      1.1.0
+// @version      1.2.0
 // @description  Block distracting websites with a cooldown timer and redirect to productive sites
 // @description:zh-CN  拦截分心网站，冷静倒计时后重定向到指定网站，帮助你保持专注
 // @author       Daniel
 // @license      MIT
 // @homepage     https://github.com/Jsaeron/site-redirector
 // @supportURL   https://github.com/Jsaeron/site-redirector/issues
-// @match        *://*.bilibili.com/*
-// @match        *://*.douyin.com/*
-// @match        *://*.weibo.com/*
-// @match        *://x.com/*
-// @match        *://*.x.com/*
+// @match        *://*/*
 // @grant        GM_setValue
 // @grant        GM_getValue
 // @grant        GM_registerMenuCommand
@@ -27,10 +23,27 @@
 
     // ============ 配置区域 ============
     const DEFAULT_TARGET = 'https://claude.ai';
+    const DEFAULT_BLACKLIST = ['bilibili.com', 'douyin.com', 'weibo.com', 'x.com'];
     const CONFIG = {
         target: GM_getValue('redirectTarget', DEFAULT_TARGET),  // 重定向目标（可通过菜单修改）
         cooldown: 30,                  // 冷静期秒数
     };
+
+    // 获取黑名单
+    function getBlacklist() {
+        return GM_getValue('blacklist', DEFAULT_BLACKLIST);
+    }
+
+    // 检查当前网站是否在黑名单中
+    function isBlocked(hostname) {
+        const blacklist = getBlacklist();
+        return blacklist.some(site => hostname === site || hostname.endsWith('.' + site));
+    }
+
+    // 如果不在黑名单中，直接退出
+    if (!isBlocked(location.hostname)) {
+        return;
+    }
     // =================================
 
     // 注册菜单命令：设置重定向目标
@@ -48,6 +61,68 @@
         }
     });
 
+    // 注册菜单命令：查看黑名单
+    GM_registerMenuCommand('📋 查看黑名单', () => {
+        const blacklist = getBlacklist();
+        alert(`当前黑名单（${blacklist.length} 个网站）：\n\n${blacklist.join('\n')}`);
+    });
+
+    // 注册菜单命令：添加到黑名单
+    GM_registerMenuCommand('➕ 添加网站到黑名单', () => {
+        const site = prompt('请输入要拦截的域名（如 example.com）：', '');
+        if (site && site.trim()) {
+            const domain = site.trim().toLowerCase().replace(/^(https?:\/\/)?(www\.)?/, '').replace(/\/.*$/, '');
+            const blacklist = getBlacklist();
+            if (blacklist.includes(domain)) {
+                alert(`${domain} 已在黑名单中`);
+            } else {
+                blacklist.push(domain);
+                GM_setValue('blacklist', blacklist);
+                alert(`已添加 ${domain} 到黑名单`);
+            }
+        }
+    });
+
+    // 注册菜单命令：从黑名单移除
+    GM_registerMenuCommand('➖ 从黑名单移除网站', () => {
+        const blacklist = getBlacklist();
+        if (blacklist.length === 0) {
+            alert('黑名单为空');
+            return;
+        }
+        const site = prompt(`当前黑名单：\n${blacklist.join('\n')}\n\n请输入要移除的域名：`, '');
+        if (site && site.trim()) {
+            const domain = site.trim().toLowerCase();
+            const index = blacklist.indexOf(domain);
+            if (index > -1) {
+                blacklist.splice(index, 1);
+                GM_setValue('blacklist', blacklist);
+                alert(`已从黑名单移除 ${domain}`);
+            } else {
+                alert(`${domain} 不在黑名单中`);
+            }
+        }
+    });
+
+    // 注册菜单命令：编辑完整黑名单
+    GM_registerMenuCommand('✏️ 编辑完整黑名单', () => {
+        const blacklist = getBlacklist();
+        const input = prompt('编辑黑名单（每行一个域名，用换行或逗号分隔）：', blacklist.join(', '));
+        if (input !== null) {
+            const newList = input.split(/[,\n]/).map(s => s.trim().toLowerCase().replace(/^(https?:\/\/)?(www\.)?/, '').replace(/\/.*$/, '')).filter(s => s.length > 0);
+            GM_setValue('blacklist', newList);
+            alert(`黑名单已更新，共 ${newList.length} 个网站`);
+        }
+    });
+
+    // 注册菜单命令：重置黑名单
+    GM_registerMenuCommand('🔙 重置为默认黑名单', () => {
+        if (confirm(`确定要重置黑名单为默认设置吗？\n\n默认黑名单：\n${DEFAULT_BLACKLIST.join('\n')}`)) {
+            GM_setValue('blacklist', DEFAULT_BLACKLIST);
+            alert('黑名单已重置为默认设置');
+        }
+    });
+
     // 注册菜单命令：重置计数
     GM_registerMenuCommand('🔄 重置拦截计数', () => {
         GM_setValue('blockCount', 0);
@@ -58,7 +133,8 @@
     GM_registerMenuCommand('📊 查看拦截统计', () => {
         const count = GM_getValue('blockCount', 0);
         const target = GM_getValue('redirectTarget', DEFAULT_TARGET);
-        alert(`累计拦截次数：${count}\n当前重定向目标：${target}`);
+        const blacklist = getBlacklist();
+        alert(`累计拦截次数：${count}\n当前重定向目标：${target}\n黑名单网站数：${blacklist.length}`);
     });
 
     // 更新拦截计数
