@@ -2,7 +2,7 @@
 // @name         Site Redirector Pro
 // @name:zh-CN   网站重定向助手
 // @namespace    https://github.com/Jsaeron/site-redirector
-// @version      1.6.0
+// @version      1.6.1
 // @description  Block distracting websites with a cooldown timer and redirect to productive sites
 // @description:zh-CN  拦截分心网站，冷静倒计时后重定向到指定网站，帮助你保持专注
 // @author       Daniel
@@ -446,7 +446,7 @@
 
     document.body.innerHTML = `
         <div class="container">
-            <div class="icon">🛑</div>
+            <div class="icon" id="random-emoji">🛑</div>
             <div class="title">${randomTitle}</div>
             <div class="subtitle">${location.hostname}</div>
             <div class="count">今日第 <strong>${todayCount}</strong> 次 / 累计第 <strong>${totalCount}</strong> 次被拦截</div>
@@ -474,6 +474,21 @@
             </div>
         </div>
     `;
+
+    fetch('https://emojihub.yurace.pro/api/random')
+        .then(response => response.json())
+        .then(data => {
+            const emojiEl = document.getElementById('random-emoji');
+            if (!emojiEl) {
+                return;
+            }
+            if (data && Array.isArray(data.htmlCode) && data.htmlCode[0]) {
+                emojiEl.innerHTML = data.htmlCode[0];
+            } else if (data && typeof data.emoji === 'string') {
+                emojiEl.textContent = data.emoji;
+            }
+        })
+        .catch(() => {});
 
     // 获取一言语录
     GM_xmlhttpRequest({
