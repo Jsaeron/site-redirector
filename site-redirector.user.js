@@ -2,7 +2,7 @@
 // @name         Site Redirector Pro
 // @name:zh-CN   网站重定向助手
 // @namespace    https://github.com/Jsaeron/site-redirector
-// @version      1.6.3
+// @version      1.6.4
 // @description  Block distracting websites with a cooldown timer and redirect to productive sites
 // @description:zh-CN  拦截分心网站，冷静倒计时后重定向到指定网站，帮助你保持专注
 // @author       Daniel
@@ -100,17 +100,21 @@
     const randomTitle = TITLES[Math.floor(Math.random() * TITLES.length)];
 
     function normalizeDomain(value) {
-        return value
+        return String(value || '')
             .trim()
             .toLowerCase()
             .replace(/^(https?:\/\/)?(www\.)?/, '')
-            .replace(/\/.*$/, '');
+            .replace(/\/.*$/, '')
+            .replace(/^\.+/, '')
+            .replace(/\.+$/, '');
     }
 
     // 获取黑名单
     function getBlacklist() {
         const stored = GM_getValue('blacklist', DEFAULT_BLACKLIST);
-        const list = Array.isArray(stored) ? stored : String(stored).split(/[,\n]/);
+        const list = Array.isArray(stored)
+            ? stored
+            : String(stored).split(/[,\n，；;]+/);
         const normalized = list.map(normalizeDomain).filter(s => s.length > 0);
         if (!Array.isArray(stored) || normalized.length !== stored.length) {
             GM_setValue('blacklist', normalized);
@@ -122,56 +126,11 @@
         return new Date().toISOString().slice(0, 10);
     }
 
-    function getTodayStr() {
-        return new Date().toISOString().slice(0, 10);
-    }
-
     // 检查当前网站是否在黑名单中
     function isBlocked(hostname) {
         const blacklist = getBlacklist();
         const normalizedHostname = normalizeDomain(hostname);
         return blacklist.some(site => normalizedHostname === site || normalizedHostname.endsWith('.' + site));
-    }
-
-    function getQuotaUsageKey(dateStr, domain) {
-        return `quotaUsage_${dateStr}_${domain}`;
-    }
-
-    function getQuotaVisitKey(dateStr, domain) {
-        return `quotaVisits_${dateStr}_${domain}`;
-    }
-
-    function isQuotaEnabled() {
-        return CONFIG.dailyQuotaMinutes > 0 || CONFIG.dailyQuotaVisits > 0;
-    }
-
-    function canAccessWithinQuota(domain) {
-        if (!isQuotaEnabled()) {
-            return false;
-        }
-        const todayStr = getTodayStr();
-        const usedMinutes = GM_getValue(getQuotaUsageKey(todayStr, domain), 0);
-        const usedVisits = GM_getValue(getQuotaVisitKey(todayStr, domain), 0);
-        const minutesOk = CONFIG.dailyQuotaMinutes === 0 || usedMinutes < CONFIG.dailyQuotaMinutes;
-        const visitsOk = CONFIG.dailyQuotaVisits === 0 || usedVisits < CONFIG.dailyQuotaVisits;
-        return minutesOk && visitsOk;
-    }
-
-    function startQuotaSession(domain) {
-        const todayStr = getTodayStr();
-        const visitKey = getQuotaVisitKey(todayStr, domain);
-        GM_setValue(visitKey, GM_getValue(visitKey, 0) + 1);
-
-        let sessionMinutes = 0;
-        const intervalId = setInterval(() => {
-            sessionMinutes += 1;
-            const usageKey = getQuotaUsageKey(todayStr, domain);
-            GM_setValue(usageKey, GM_getValue(usageKey, 0) + 1);
-        }, 60 * 1000);
-
-        window.addEventListener('beforeunload', () => {
-            clearInterval(intervalId);
-        });
     }
 
     function getQuotaUsageKey(dateStr, domain) {
