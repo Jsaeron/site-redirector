@@ -2,7 +2,7 @@
 // @name         Site Redirector Pro
 // @name:zh-CN   网站重定向助手
 // @namespace    https://github.com/Jsaeron/site-redirector
-// @version      1.6.2
+// @version      1.6.3
 // @description  Block distracting websites with a cooldown timer and redirect to productive sites
 // @description:zh-CN  拦截分心网站，冷静倒计时后重定向到指定网站，帮助你保持专注
 // @author       Daniel
@@ -99,9 +99,27 @@
     ];
     const randomTitle = TITLES[Math.floor(Math.random() * TITLES.length)];
 
+    function normalizeDomain(value) {
+        return value
+            .trim()
+            .toLowerCase()
+            .replace(/^(https?:\/\/)?(www\.)?/, '')
+            .replace(/\/.*$/, '');
+    }
+
     // 获取黑名单
     function getBlacklist() {
-        return GM_getValue('blacklist', DEFAULT_BLACKLIST);
+        const stored = GM_getValue('blacklist', DEFAULT_BLACKLIST);
+        const list = Array.isArray(stored) ? stored : String(stored).split(/[,\n]/);
+        const normalized = list.map(normalizeDomain).filter(s => s.length > 0);
+        if (!Array.isArray(stored) || normalized.length !== stored.length) {
+            GM_setValue('blacklist', normalized);
+        }
+        return normalized;
+    }
+
+    function getTodayStr() {
+        return new Date().toISOString().slice(0, 10);
     }
 
     function getTodayStr() {
@@ -111,7 +129,49 @@
     // 检查当前网站是否在黑名单中
     function isBlocked(hostname) {
         const blacklist = getBlacklist();
-        return blacklist.some(site => hostname === site || hostname.endsWith('.' + site));
+        const normalizedHostname = normalizeDomain(hostname);
+        return blacklist.some(site => normalizedHostname === site || normalizedHostname.endsWith('.' + site));
+    }
+
+    function getQuotaUsageKey(dateStr, domain) {
+        return `quotaUsage_${dateStr}_${domain}`;
+    }
+
+    function getQuotaVisitKey(dateStr, domain) {
+        return `quotaVisits_${dateStr}_${domain}`;
+    }
+
+    function isQuotaEnabled() {
+        return CONFIG.dailyQuotaMinutes > 0 || CONFIG.dailyQuotaVisits > 0;
+    }
+
+    function canAccessWithinQuota(domain) {
+        if (!isQuotaEnabled()) {
+            return false;
+        }
+        const todayStr = getTodayStr();
+        const usedMinutes = GM_getValue(getQuotaUsageKey(todayStr, domain), 0);
+        const usedVisits = GM_getValue(getQuotaVisitKey(todayStr, domain), 0);
+        const minutesOk = CONFIG.dailyQuotaMinutes === 0 || usedMinutes < CONFIG.dailyQuotaMinutes;
+        const visitsOk = CONFIG.dailyQuotaVisits === 0 || usedVisits < CONFIG.dailyQuotaVisits;
+        return minutesOk && visitsOk;
+    }
+
+    function startQuotaSession(domain) {
+        const todayStr = getTodayStr();
+        const visitKey = getQuotaVisitKey(todayStr, domain);
+        GM_setValue(visitKey, GM_getValue(visitKey, 0) + 1);
+
+        let sessionMinutes = 0;
+        const intervalId = setInterval(() => {
+            sessionMinutes += 1;
+            const usageKey = getQuotaUsageKey(todayStr, domain);
+            GM_setValue(usageKey, GM_getValue(usageKey, 0) + 1);
+        }, 60 * 1000);
+
+        window.addEventListener('beforeunload', () => {
+            clearInterval(intervalId);
+        });
     }
 
     function getQuotaUsageKey(dateStr, domain) {
@@ -160,7 +220,7 @@
         return;
     }
 
-    const normalizedDomain = location.hostname;
+    const normalizedDomain = normalizeDomain(location.hostname);
     if (canAccessWithinQuota(normalizedDomain)) {
         startQuotaSession(normalizedDomain);
         return;
@@ -199,7 +259,7 @@
     GM_registerMenuCommand('➕ 添加网站到黑名单', () => {
         const site = prompt('请输入要拦截的域名（如 example.com）：', '');
         if (site && site.trim()) {
-            const domain = site.trim().toLowerCase().replace(/^(https?:\/\/)?(www\.)?/, '').replace(/\/.*$/, '');
+            const domain = normalizeDomain(site);
             const blacklist = getBlacklist();
             if (blacklist.includes(domain)) {
                 alert(`${domain} 已在黑名单中`);
@@ -220,7 +280,7 @@
         }
         const site = prompt(`当前黑名单：\n${blacklist.join('\n')}\n\n请输入要移除的域名：`, '');
         if (site && site.trim()) {
-            const domain = site.trim().toLowerCase();
+            const domain = normalizeDomain(site);
             const index = blacklist.indexOf(domain);
             if (index > -1) {
                 blacklist.splice(index, 1);
@@ -237,7 +297,7 @@
         const blacklist = getBlacklist();
         const input = prompt('编辑黑名单（每行一个域名，用换行或逗号分隔）：', blacklist.join(', '));
         if (input !== null) {
-            const newList = input.split(/[,\n]/).map(s => s.trim().toLowerCase().replace(/^(https?:\/\/)?(www\.)?/, '').replace(/\/.*$/, '')).filter(s => s.length > 0);
+            const newList = input.split(/[,\n]/).map(normalizeDomain).filter(s => s.length > 0);
             GM_setValue('blacklist', newList);
             alert(`黑名单已更新，共 ${newList.length} 个网站`);
         }
@@ -447,7 +507,7 @@
 
     document.body.innerHTML = `
         <div class="container">
-            <div class="icon" id="random-emoji">🛑</div>
+            <div class="icon" id="random-emoji"></div>
             <div class="title">${randomTitle}</div>
             <div class="subtitle">${location.hostname}</div>
             <div class="count">今日第 <strong>${todayCount}</strong> 次 / 累计第 <strong>${totalCount}</strong> 次被拦截</div>
@@ -480,19 +540,27 @@
         method: 'GET',
         url: 'https://emojihub.yurace.pro/api/random',
         onload: function(response) {
+            const emojiEl = document.getElementById('random-emoji');
+            if (!emojiEl) {
+                return;
+            }
             try {
                 const data = JSON.parse(response.responseText);
-                const emojiEl = document.getElementById('random-emoji');
-                if (!emojiEl) {
-                    return;
-                }
                 if (data && Array.isArray(data.htmlCode) && data.htmlCode[0]) {
                     emojiEl.innerHTML = data.htmlCode[0];
                 } else if (data && typeof data.emoji === 'string') {
                     emojiEl.textContent = data.emoji;
+                } else {
+                    emojiEl.textContent = '🛑';
                 }
             } catch (e) {
-                // ignore failures
+                emojiEl.textContent = '🛑';
+            }
+        },
+        onerror: function() {
+            const emojiEl = document.getElementById('random-emoji');
+            if (emojiEl) {
+                emojiEl.textContent = '🛑';
             }
         }
     });
