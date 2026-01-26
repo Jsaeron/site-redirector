@@ -2,7 +2,7 @@
 // @name         Site Redirector Pro
 // @name:zh-CN   网站重定向助手
 // @namespace    https://github.com/Jsaeron/site-redirector
-// @version      1.6.4
+// @version      1.6.5
 // @description  Block distracting websites with a cooldown timer and redirect to productive sites
 // @description:zh-CN  拦截分心网站，冷静倒计时后重定向到指定网站，帮助你保持专注
 // @author       Daniel
@@ -174,25 +174,6 @@
         });
     }
 
-    // 如果不在黑名单中，直接退出
-    if (!isBlocked(location.hostname)) {
-        return;
-    }
-
-    const normalizedDomain = normalizeDomain(location.hostname);
-    if (canAccessWithinQuota(normalizedDomain)) {
-        startQuotaSession(normalizedDomain);
-        return;
-    }
-
-    // 检查临时绕过（选择继续摸鱼后 5 分钟内不再拦截）
-    const bypassKey = 'bypass_' + location.hostname;
-    const bypassExpire = GM_getValue(bypassKey, 0);
-    if (Date.now() < bypassExpire) {
-        return;  // 在绕过期内，不拦截
-    }
-    // =================================
-
     // 注册菜单命令：设置重定向目标
     GM_registerMenuCommand('🎯 设置重定向目标', () => {
         const current = GM_getValue('redirectTarget', DEFAULT_TARGET);
@@ -362,6 +343,25 @@
             }
         }
     });
+
+    // 如果不在黑名单中，直接退出
+    if (!isBlocked(location.hostname)) {
+        return;
+    }
+
+    const normalizedDomain = normalizeDomain(location.hostname);
+    if (canAccessWithinQuota(normalizedDomain)) {
+        startQuotaSession(normalizedDomain);
+        return;
+    }
+
+    // 检查临时绕过（选择继续摸鱼后 5 分钟内不再拦截）
+    const bypassKey = 'bypass_' + location.hostname;
+    const bypassExpire = GM_getValue(bypassKey, 0);
+    if (Date.now() < bypassExpire) {
+        return;  // 在绕过期内，不拦截
+    }
+    // =================================
 
     // 更新拦截计数
     const totalCount = GM_getValue('blockCount', 0) + 1;
