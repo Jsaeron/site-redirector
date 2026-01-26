@@ -2,7 +2,7 @@
 // @name         Site Redirector Pro
 // @name:zh-CN   网站重定向助手
 // @namespace    https://github.com/Jsaeron/site-redirector
-// @version      1.6.1
+// @version      1.6.2
 // @description  Block distracting websites with a cooldown timer and redirect to productive sites
 // @description:zh-CN  拦截分心网站，冷静倒计时后重定向到指定网站，帮助你保持专注
 // @author       Daniel
@@ -15,6 +15,7 @@
 // @grant        GM_registerMenuCommand
 // @grant        GM_xmlhttpRequest
 // @connect      v1.hitokoto.cn
+// @connect      emojihub.yurace.pro
 // @run-at       document-start
 // ==/UserScript==
 
@@ -475,20 +476,26 @@
         </div>
     `;
 
-    fetch('https://emojihub.yurace.pro/api/random')
-        .then(response => response.json())
-        .then(data => {
-            const emojiEl = document.getElementById('random-emoji');
-            if (!emojiEl) {
-                return;
+    GM_xmlhttpRequest({
+        method: 'GET',
+        url: 'https://emojihub.yurace.pro/api/random',
+        onload: function(response) {
+            try {
+                const data = JSON.parse(response.responseText);
+                const emojiEl = document.getElementById('random-emoji');
+                if (!emojiEl) {
+                    return;
+                }
+                if (data && Array.isArray(data.htmlCode) && data.htmlCode[0]) {
+                    emojiEl.innerHTML = data.htmlCode[0];
+                } else if (data && typeof data.emoji === 'string') {
+                    emojiEl.textContent = data.emoji;
+                }
+            } catch (e) {
+                // ignore failures
             }
-            if (data && Array.isArray(data.htmlCode) && data.htmlCode[0]) {
-                emojiEl.innerHTML = data.htmlCode[0];
-            } else if (data && typeof data.emoji === 'string') {
-                emojiEl.textContent = data.emoji;
-            }
-        })
-        .catch(() => {});
+        }
+    });
 
     // 获取一言语录
     GM_xmlhttpRequest({
