@@ -122,11 +122,56 @@
         return new Date().toISOString().slice(0, 10);
     }
 
+    function getTodayStr() {
+        return new Date().toISOString().slice(0, 10);
+    }
+
     // 检查当前网站是否在黑名单中
     function isBlocked(hostname) {
         const blacklist = getBlacklist();
         const normalizedHostname = normalizeDomain(hostname);
         return blacklist.some(site => normalizedHostname === site || normalizedHostname.endsWith('.' + site));
+    }
+
+    function getQuotaUsageKey(dateStr, domain) {
+        return `quotaUsage_${dateStr}_${domain}`;
+    }
+
+    function getQuotaVisitKey(dateStr, domain) {
+        return `quotaVisits_${dateStr}_${domain}`;
+    }
+
+    function isQuotaEnabled() {
+        return CONFIG.dailyQuotaMinutes > 0 || CONFIG.dailyQuotaVisits > 0;
+    }
+
+    function canAccessWithinQuota(domain) {
+        if (!isQuotaEnabled()) {
+            return false;
+        }
+        const todayStr = getTodayStr();
+        const usedMinutes = GM_getValue(getQuotaUsageKey(todayStr, domain), 0);
+        const usedVisits = GM_getValue(getQuotaVisitKey(todayStr, domain), 0);
+        const minutesOk = CONFIG.dailyQuotaMinutes === 0 || usedMinutes < CONFIG.dailyQuotaMinutes;
+        const visitsOk = CONFIG.dailyQuotaVisits === 0 || usedVisits < CONFIG.dailyQuotaVisits;
+        return minutesOk && visitsOk;
+    }
+
+    function startQuotaSession(domain) {
+        const todayStr = getTodayStr();
+        const visitKey = getQuotaVisitKey(todayStr, domain);
+        GM_setValue(visitKey, GM_getValue(visitKey, 0) + 1);
+
+        let sessionMinutes = 0;
+        const intervalId = setInterval(() => {
+            sessionMinutes += 1;
+            const usageKey = getQuotaUsageKey(todayStr, domain);
+            GM_setValue(usageKey, GM_getValue(usageKey, 0) + 1);
+        }, 60 * 1000);
+
+        window.addEventListener('beforeunload', () => {
+            clearInterval(intervalId);
+        });
     }
 
     function getQuotaUsageKey(dateStr, domain) {
