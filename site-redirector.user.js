@@ -394,7 +394,7 @@
     siteCounts[normalizedDomain] = (siteCounts[normalizedDomain] || 0) + 1;
     GM_setValue('blockCountBySite', siteCounts);
 
-    function renderBlockPage() {
+    function renderBlockPage(onMounted) {
         const styles = `
             #site-redirector-root, #site-redirector-root * {
                 margin: 0;
@@ -541,12 +541,14 @@
                 body.appendChild(root);
             }
             root.innerHTML = content;
+            document.title = 'Site Redirector Pro';
             body.setAttribute('data-site-redirector-active', '1');
             document.documentElement.setAttribute('data-site-redirector-active', '1');
             debugLog('block page mounted', {
                 readyState: document.readyState,
                 hostname: location.hostname
             });
+            if (onMounted) onMounted();
             return true;
         }
 
@@ -573,9 +575,25 @@
         });
     }
 
-    renderBlockPage();
+    // 挂载成功后才设置倒计时和事件监听，避免 document-start 时 DOM 未就绪导致 null 引用崩溃
+    renderBlockPage(function setupInteractions() {
+        // 防止网站自身 JS（React/Vue hydration 等）替换 body 后 overlay 消失
+        // 保存元素引用，直接 re-append 而不重新初始化（避免重复绑定事件/重置计时器）
+        const rootEl = document.getElementById('site-redirector-root');
+        const styleEl = document.getElementById('site-redirector-style');
+        const remountObserver = new MutationObserver(() => {
+            if (!document.contains(rootEl)) {
+                debugLog('overlay removed by site JS, re-appending');
+                if (styleEl && !document.contains(styleEl)) {
+                    document.head.appendChild(styleEl);
+                }
+                document.body.appendChild(rootEl);
+                document.body.setAttribute('data-site-redirector-active', '1');
+            }
+        });
+        remountObserver.observe(document.body, { childList: true, subtree: false });
 
-    GM_xmlhttpRequest({
+        GM_xmlhttpRequest({
         method: 'GET',
         url: 'https://emojihub.yurace.pro/api/random',
         onload: function(response) {
@@ -662,4 +680,5 @@
         GM_setValue(bypassKey, Date.now() + 5 * 60 * 1000);  // 5 分钟后过期
         location.reload();
     });
+    }); // end renderBlockPage callback
 })();
