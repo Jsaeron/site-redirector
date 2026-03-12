@@ -386,10 +386,8 @@
     siteCounts[normalizedDomain] = (siteCounts[normalizedDomain] || 0) + 1;
     GM_setValue('blockCountBySite', siteCounts);
 
-    // 阻止原页面加载
-    document.documentElement.innerHTML = '';
-    document.head.innerHTML = `
-        <style>
+    function renderBlockPage() {
+        const styles = `
             * { margin: 0; padding: 0; box-sizing: border-box; }
             body {
                 min-height: 100vh;
@@ -462,39 +460,47 @@
             }
             .pill-red:hover { transform: scale(1.05); box-shadow: 0 6px 20px rgba(245, 87, 108, 0.6); }
             .pill-label { display: block; font-size: 12px; margin-top: 5px; opacity: 0.8; font-weight: normal; }
-        </style>
-    `;
-
-    document.body.innerHTML = `
-        <div class="container">
-            <div class="icon" id="random-emoji"></div>
-            <div class="title">${randomTitle}</div>
-            <div class="subtitle">${location.hostname}</div>
-            <div class="count">今日第 <strong>${todayCount}</strong> 次 / 累计第 <strong>${totalCount}</strong> 次被拦截</div>
-            <div class="timer" id="countdown">${CONFIG.cooldown}</div>
-            <div class="hint" id="hint">${CONFIG.cooldown}秒冷静期后做出你的选择</div>
-            <div class="actions" id="actions">
-                <button class="btn btn-secondary" id="skip">算了，回去干活</button>
-            </div>
-            <div class="choice-container" id="choice">
-                <div class="choice-title">冷静期结束，做出你的选择</div>
-                <div class="pills">
-                    <button class="pill pill-blue" id="blue-pill">
-                        💼 回去干活
-                        <span class="pill-label">前往工作页面</span>
-                    </button>
-                    <button class="pill pill-red" id="red-pill">
-                        🎮 就要摸鱼
-                        <span class="pill-label">继续访问此网站</span>
-                    </button>
+        `;
+        const content = `
+            <div class="container">
+                <div class="icon" id="random-emoji"></div>
+                <div class="title">${randomTitle}</div>
+                <div class="subtitle">${location.hostname}</div>
+                <div class="count">今日第 <strong>${todayCount}</strong> 次 / 累计第 <strong>${totalCount}</strong> 次被拦截</div>
+                <div class="timer" id="countdown">${CONFIG.cooldown}</div>
+                <div class="hint" id="hint">${CONFIG.cooldown}秒冷静期后做出你的选择</div>
+                <div class="actions" id="actions">
+                    <button class="btn btn-secondary" id="skip">算了，回去干活</button>
+                </div>
+                <div class="choice-container" id="choice">
+                    <div class="choice-title">冷静期结束，做出你的选择</div>
+                    <div class="pills">
+                        <button class="pill pill-blue" id="blue-pill">
+                            💼 回去干活
+                            <span class="pill-label">前往工作页面</span>
+                        </button>
+                        <button class="pill pill-red" id="red-pill">
+                            🎮 就要摸鱼
+                            <span class="pill-label">继续访问此网站</span>
+                        </button>
+                    </div>
+                </div>
+                <div class="quote-container">
+                    <div class="quote-text" id="quote">加载中...</div>
+                    <div class="quote-source" id="quote-source"></div>
                 </div>
             </div>
-            <div class="quote-container">
-                <div class="quote-text" id="quote">加载中...</div>
-                <div class="quote-source" id="quote-source"></div>
-            </div>
-        </div>
-    `;
+        `;
+
+        if (typeof window.stop === 'function') {
+            window.stop();
+        }
+        document.open();
+        document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Site Redirector Pro</title><style>${styles}</style></head><body>${content}</body></html>`);
+        document.close();
+    }
+
+    renderBlockPage();
 
     GM_xmlhttpRequest({
         method: 'GET',
