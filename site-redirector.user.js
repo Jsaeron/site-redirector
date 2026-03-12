@@ -30,7 +30,9 @@
         dailyQuotaMinutes: 'dailyQuotaMinutes',
         dailyQuotaVisits: 'dailyQuotaVisits',
         themeMode: 'themeMode',
-        debugMode: 'debugMode'
+        debugMode: 'debugMode',
+        forceMode: 'forceMode',
+        bypassReasonLog: 'bypassReasonLog'
     };
 
     const DEFAULTS = {
@@ -90,6 +92,9 @@
     const ROOT_ID = 'site-redirector-root';
     const STYLE_ID = 'site-redirector-style';
     const ACTIVE_ATTR = 'data-site-redirector-active';
+    const SESSION_PREFIX = 'blockSession_';
+    const BYPASS_PREFIX = 'bypass_';
+    const REASONS = ['逃避任务', '无聊', '习惯性打开', '想看一眼', '社交回复', '其他'];
     const normalizedDomain = normalizeDomain(location.hostname);
     const debugEnabled = GM_getValue(STORAGE.debugMode, false);
 
@@ -203,11 +208,154 @@
     }
 
     function getBypassKey(hostname) {
-        return 'bypass_' + hostname;
+        return BYPASS_PREFIX + normalizeDomain(hostname);
     }
 
     function isBypassed(hostname) {
         return Date.now() < GM_getValue(getBypassKey(hostname), 0);
+    }
+
+    function getBlockSessionKey(domain) {
+        return SESSION_PREFIX + domain;
+    }
+
+    function getBlockSession(domain) {
+        const session = GM_getValue(getBlockSessionKey(domain), null);
+        if (!session || typeof session !== 'object') {
+            return null;
+        }
+        if (session.expiresAt <= Date.now()) {
+            GM_setValue(getBlockSessionKey(domain), null);
+            return null;
+        }
+        return session;
+    }
+
+    function startOrRefreshBlockSession(domain) {
+        const existing = getBlockSession(domain);
+        if (existing) {
+            return existing;
+        }
+        const session = {
+            startedAt: Date.now(),
+            expiresAt: Date.now() + DEFAULTS.cooldown * 1000
+        };
+        GM_setValue(getBlockSessionKey(domain), session);
+        return session;
+    }
+
+    function clearBlockSession(domain) {
+        GM_setValue(getBlockSessionKey(domain), null);
+    }
+
+    function isForceModeEnabled() {
+        return GM_getValue(STORAGE.forceMode, false);
+    }
+
+    function getBypassReasonLog() {
+        const log = GM_getValue(STORAGE.bypassReasonLog, []);
+        return Array.isArray(log) ? log : [];
+    }
+
+    function recordBypassReason(domain, reason) {
+        const log = getBypassReasonLog();
+        log.push({
+            ts: Date.now(),
+            date: getTodayStr(),
+            domain,
+            reason: reason || '其他'
+        });
+        GM_setValue(STORAGE.bypassReasonLog, log.slice(-500));
+    }
+
+    function getPastDateStr(offsetDays) {
+        const date = new Date();
+        date.setDate(date.getDate() - offsetDays);
+        return date.toISOString().slice(0, 10);
+    }
+
+    function getRecentBypassReasons(days) {
+        const cutoff = Date.now() - days * 24 * 60 * 60 * 1000;
+        return getBypassReasonLog().filter(item => item && item.ts >= cutoff);
+    }
+
+    function getFocusStreakDays() {
+        const log = getBypassReasonLog();
+        if (log.length === 0) {
+            return 0;
+        }
+        let streak = 0;
+        const bypassDates = new Set(log.map(item => item.date));
+        for (let i = 0; i < 365; i++) {
+            const dateStr = getPastDateStr(i);
+            if (bypassDates.has(dateStr)) {
+                break;
+            }
+            streak += 1;
+        }
+        return streak;
+    }
+
+    function getAchievementText(stats, streakDays) {
+        if (isForceModeEnabled()) {
+            return '硬核模式已开启';
+        }
+        if (streakDays >= 14) {
+            return '连续专注两周';
+        }
+        if (streakDays >= 7) {
+            return '连续专注一周';
+        }
+        if (stats.todayCount <= 1) {
+            return '今天控制得很好';
+        }
+        if (stats.todayCount <= 3) {
+            return '今天还在掌控范围';
+        }
+        return '先把今天稳住';
+    }
+
+    function getWeeklySummary() {
+        const days = [];
+        const hourlyTotals = Array(24).fill(0);
+        const siteTotals = {};
+        for (let i = 6; i >= 0; i--) {
+            const dateStr = getPastDateStr(i);
+            const count = GM_getValue('blockCount_' + dateStr, 0);
+            days.push({ date: dateStr, count });
+            const hourCounts = GM_getValue('blockHours_' + dateStr, []);
+            for (let hour = 0; hour < 24; hour++) {
+                hourlyTotals[hour] += hourCounts[hour] || 0;
+            }
+            const daySites = GM_getValue('blockCountBySite_' + dateStr, {});
+            Object.entries(daySites).forEach(([site, count]) => {
+                siteTotals[site] = (siteTotals[site] || 0) + count;
+            });
+        }
+
+        const reasons = {};
+        getRecentBypassReasons(7).forEach((item) => {
+            reasons[item.reason] = (reasons[item.reason] || 0) + 1;
+        });
+
+        const topHour = hourlyTotals.indexOf(Math.max(...hourlyTotals));
+        const topSites = Object.entries(siteTotals).sort((a, b) => b[1] - a[1]).slice(0, 3);
+        const topReasons = Object.entries(reasons).sort((a, b) => b[1] - a[1]).slice(0, 3);
+        const weeklyBlocks = days.reduce((sum, item) => sum + item.count, 0);
+        const streakDays = getFocusStreakDays();
+
+        return {
+            days,
+            topHour,
+            topSites,
+            topReasons,
+            weeklyBlocks,
+            streakDays
+        };
+    }
+
+    function isIncognitoContext() {
+        return Boolean(window.chrome && chrome.extension && chrome.extension.inIncognitoContext);
     }
 
     function incrementBlockStats(domain) {
@@ -228,6 +376,11 @@
         const siteCounts = GM_getValue(STORAGE.blockCountBySite, {});
         siteCounts[domain] = (siteCounts[domain] || 0) + 1;
         GM_setValue(STORAGE.blockCountBySite, siteCounts);
+
+        const dailySiteKey = 'blockCountBySite_' + today;
+        const dailySiteCounts = GM_getValue(dailySiteKey, {});
+        dailySiteCounts[domain] = (dailySiteCounts[domain] || 0) + 1;
+        GM_setValue(dailySiteKey, dailySiteCounts);
 
         return {
             totalCount,
@@ -380,6 +533,23 @@
             alert(`近7天拦截趋势：\n${days.join('\n')}\n\n高峰时段：${peakHour}:00 - ${peakHour + 1}:00`);
         });
 
+        GM_registerMenuCommand('🧠 查看专注周报', () => {
+            const summary = getWeeklySummary();
+            const topSites = summary.topSites.length
+                ? summary.topSites.map(([site, count], index) => `${index + 1}. ${site} - ${count} 次`).join('\n')
+                : '暂无数据';
+            const topReasons = summary.topReasons.length
+                ? summary.topReasons.map(([reason, count], index) => `${index + 1}. ${reason} - ${count} 次`).join('\n')
+                : '暂无摸鱼放行记录';
+            alert(
+                `近7天累计拦截：${summary.weeklyBlocks} 次\n` +
+                `最容易分心时段：${summary.topHour}:00 - ${summary.topHour + 1}:00\n` +
+                `连续专注天数：${summary.streakDays} 天\n\n` +
+                `最容易分心的站点：\n${topSites}\n\n` +
+                `继续摸鱼原因：\n${topReasons}`
+            );
+        });
+
         GM_registerMenuCommand('🏆 查看站点排行', () => {
             const siteCounts = GM_getValue(STORAGE.blockCountBySite, {});
             const entries = Object.entries(siteCounts).sort((a, b) => b[1] - a[1]);
@@ -408,6 +578,12 @@
             }
             GM_setValue(STORAGE.themeMode, next);
             alert(`主题已切换为：${labels[next]}\n刷新页面后生效`);
+        });
+
+        GM_registerMenuCommand('🔒 切换强制模式', () => {
+            const next = !isForceModeEnabled();
+            GM_setValue(STORAGE.forceMode, next);
+            alert(next ? '强制模式已开启：冷静期内不能直接跳走，倒计时结束后也不能选择继续摸鱼。' : '强制模式已关闭');
         });
     }
 
@@ -451,7 +627,18 @@
             }
             #${ROOT_ID} .sr-count {
                 color: ${theme.textMuted};
-                margin-bottom: 40px;
+                margin-bottom: 18px;
+            }
+            #${ROOT_ID} .sr-meta {
+                color: ${theme.textHint};
+                font-size: 13px;
+                margin-bottom: 22px;
+                line-height: 1.7;
+            }
+            #${ROOT_ID} .sr-warning {
+                color: ${theme.accent};
+                font-size: 13px;
+                margin-bottom: 16px;
             }
             #${ROOT_ID} .sr-timer {
                 font-size: 72px;
@@ -568,17 +755,29 @@
         `;
     }
 
-    function createMarkup(hostname, stats) {
+    function createMarkup(hostname, stats, session) {
+        const streakDays = getFocusStreakDays();
+        const summary = getWeeklySummary();
+        const topSite = summary.topSites[0] ? summary.topSites[0][0] : '暂无';
+        const warningText = [];
+        if (isForceModeEnabled()) {
+            warningText.push('强制模式：本次不能选择继续摸鱼');
+        }
+        if (isIncognitoContext()) {
+            warningText.push('无痕模式提醒：用户脚本可能受浏览器隐私设置影响');
+        }
         return `
             <div class="sr-container">
                 <div class="sr-icon" id="sr-emoji">🛑</div>
                 <div class="sr-title">${getRandomTitle()}</div>
                 <div class="sr-subtitle">${hostname}</div>
                 <div class="sr-count">今日第 <strong>${stats.todayCount}</strong> 次 / 累计第 <strong>${stats.totalCount}</strong> 次被拦截</div>
-                <div class="sr-timer" id="sr-countdown">${DEFAULTS.cooldown}</div>
-                <div class="sr-hint" id="sr-hint">${DEFAULTS.cooldown}秒冷静期后做出你的选择</div>
+                <div class="sr-meta">连续专注 <strong>${streakDays}</strong> 天 · 本周最易分心站点 <strong>${topSite}</strong> · 成就：<strong>${getAchievementText(stats, streakDays)}</strong></div>
+                ${warningText.length ? `<div class="sr-warning">${warningText.join(' · ')}</div>` : ''}
+                <div class="sr-timer" id="sr-countdown">${Math.max(1, Math.ceil((session.expiresAt - Date.now()) / 1000))}</div>
+                <div class="sr-hint" id="sr-hint">${Math.max(1, Math.ceil((session.expiresAt - Date.now()) / 1000))}秒冷静期后做出你的选择</div>
                 <div class="sr-actions" id="sr-actions">
-                    <button class="sr-btn sr-btn-secondary" id="sr-skip">算了，回去干活</button>
+                    ${isForceModeEnabled() ? '' : '<button class="sr-btn sr-btn-secondary" id="sr-skip">算了，回去干活</button>'}
                 </div>
                 <div class="sr-choice" id="sr-choice">
                     <div class="sr-choice-title">冷静期结束，做出你的选择</div>
@@ -587,10 +786,11 @@
                             💼 回去干活
                             <span class="sr-pill-label">前往工作页面</span>
                         </button>
+                        ${isForceModeEnabled() ? '' : `
                         <button class="sr-pill sr-pill-red" id="sr-red-pill">
                             🎮 就要摸鱼
                             <span class="sr-pill-label">继续访问此网站</span>
-                        </button>
+                        </button>`}
                     </div>
                 </div>
                 <div class="sr-quote-wrap">
@@ -620,7 +820,7 @@
         return root;
     }
 
-    function mountBlockPage(stats) {
+    function mountBlockPage(stats, session) {
         const theme = getTheme();
 
         function mount() {
@@ -635,7 +835,7 @@
             }
 
             const root = getOrCreateRoot();
-            root.innerHTML = createMarkup(location.hostname, stats);
+            root.innerHTML = createMarkup(location.hostname, stats, session);
             if (root.parentNode !== document.documentElement) {
                 document.documentElement.appendChild(root);
             }
@@ -740,6 +940,18 @@
         );
     }
 
+    function promptBypassReason() {
+        const input = prompt(`继续摸鱼前，记录一下原因：\n1. 逃避任务\n2. 无聊\n3. 习惯性打开\n4. 想看一眼\n5. 社交回复\n6. 其他`, '1');
+        if (input === null) {
+            return null;
+        }
+        const normalized = input.trim();
+        if (/^[1-6]$/.test(normalized)) {
+            return REASONS[parseInt(normalized, 10) - 1];
+        }
+        return REASONS.includes(normalized) ? normalized : '其他';
+    }
+
     function wireBlockPageInteractions(root) {
         const countdownEl = root.querySelector('#sr-countdown');
         const hintEl = root.querySelector('#sr-hint');
@@ -749,11 +961,15 @@
         const blueBtn = root.querySelector('#sr-blue-pill');
         const redBtn = root.querySelector('#sr-red-pill');
 
-        let remaining = DEFAULTS.cooldown;
+        const session = getBlockSession(normalizedDomain) || startOrRefreshBlockSession(normalizedDomain);
+        let remaining = Math.max(0, Math.ceil((session.expiresAt - Date.now()) / 1000));
         const timer = window.setInterval(() => {
-            remaining -= 1;
+            remaining = Math.max(0, Math.ceil((session.expiresAt - Date.now()) / 1000));
             if (countdownEl) {
-                countdownEl.textContent = String(Math.max(remaining, 0));
+                countdownEl.textContent = String(remaining);
+            }
+            if (hintEl && remaining > 0) {
+                hintEl.textContent = `${remaining}秒冷静期后做出你的选择`;
             }
             if (remaining > 0) {
                 return;
@@ -771,20 +987,41 @@
             if (choiceEl) {
                 choiceEl.style.display = 'block';
             }
+            clearBlockSession(normalizedDomain);
         }, 1000);
 
         function redirectToTarget() {
             clearInterval(timer);
+            clearBlockSession(normalizedDomain);
             window.location.replace(getTarget());
         }
 
-        skipBtn.addEventListener('click', redirectToTarget);
+        if (skipBtn) {
+            skipBtn.addEventListener('click', redirectToTarget);
+        }
         blueBtn.addEventListener('click', redirectToTarget);
-        redBtn.addEventListener('click', () => {
-            clearInterval(timer);
-            GM_setValue(getBypassKey(location.hostname), Date.now() + DEFAULTS.bypassMs);
-            window.location.reload();
-        });
+        if (redBtn) {
+            redBtn.addEventListener('click', () => {
+                const reason = promptBypassReason();
+                if (reason === null) {
+                    return;
+                }
+                clearInterval(timer);
+                clearBlockSession(normalizedDomain);
+                recordBypassReason(normalizedDomain, reason);
+                GM_setValue(getBypassKey(location.hostname), Date.now() + DEFAULTS.bypassMs);
+                window.location.reload();
+            });
+        }
+
+        if (isForceModeEnabled()) {
+            window.addEventListener('beforeunload', (event) => {
+                if (Date.now() < session.expiresAt) {
+                    event.preventDefault();
+                    event.returnValue = '';
+                }
+            });
+        }
     }
 
     function main() {
@@ -806,8 +1043,15 @@
             return;
         }
 
-        const stats = incrementBlockStats(normalizedDomain);
-        mountBlockPage(stats);
+        const existingSession = getBlockSession(normalizedDomain);
+        const session = existingSession || startOrRefreshBlockSession(normalizedDomain);
+        const stats = existingSession
+            ? {
+                totalCount: GM_getValue(STORAGE.blockCount, 0),
+                todayCount: GM_getValue('blockCount_' + getTodayStr(), 0)
+            }
+            : incrementBlockStats(normalizedDomain);
+        mountBlockPage(stats, session);
     }
 
     main();
