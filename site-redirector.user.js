@@ -77,6 +77,14 @@
     }
 
     const currentTheme = THEMES[getActiveTheme()];
+    const DEBUG = GM_getValue('debugMode', false);
+
+    function debugLog() {
+        if (!DEBUG) {
+            return;
+        }
+        console.log('[Site Redirector]', ...arguments);
+    }
 
     // 随机标题文案（灵魂拷问 + 温和提醒）
     const TITLES = [
@@ -388,9 +396,20 @@
 
     function renderBlockPage() {
         const styles = `
-            * { margin: 0; padding: 0; box-sizing: border-box; }
-            body {
-                min-height: 100vh;
+            #site-redirector-root, #site-redirector-root * {
+                margin: 0;
+                padding: 0;
+                box-sizing: border-box;
+            }
+            html[data-site-redirector-active="1"], body[data-site-redirector-active="1"] {
+                width: 100%;
+                min-height: 100%;
+                overflow: hidden !important;
+            }
+            #site-redirector-root {
+                position: fixed;
+                inset: 0;
+                z-index: 2147483647;
                 display: flex;
                 align-items: center;
                 justify-content: center;
@@ -492,12 +511,66 @@
             </div>
         `;
 
-        if (typeof window.stop === 'function') {
-            window.stop();
+        function mount() {
+            if (!document.documentElement) {
+                return false;
+            }
+
+            let head = document.head;
+            if (!head) {
+                return false;
+            }
+
+            let styleEl = document.getElementById('site-redirector-style');
+            if (!styleEl) {
+                styleEl = document.createElement('style');
+                styleEl.id = 'site-redirector-style';
+                head.appendChild(styleEl);
+            }
+            styleEl.textContent = styles;
+
+            let body = document.body;
+            if (!body) {
+                return false;
+            }
+
+            let root = document.getElementById('site-redirector-root');
+            if (!root) {
+                root = document.createElement('div');
+                root.id = 'site-redirector-root';
+                body.appendChild(root);
+            }
+            root.innerHTML = content;
+            body.setAttribute('data-site-redirector-active', '1');
+            document.documentElement.setAttribute('data-site-redirector-active', '1');
+            debugLog('block page mounted', {
+                readyState: document.readyState,
+                hostname: location.hostname
+            });
+            return true;
         }
-        document.open();
-        document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Site Redirector Pro</title><style>${styles}</style></head><body>${content}</body></html>`);
-        document.close();
+
+        if (mount()) {
+            return;
+        }
+
+        const observer = new MutationObserver(() => {
+            if (mount()) {
+                observer.disconnect();
+            }
+        });
+        observer.observe(document, { childList: true, subtree: true });
+
+        window.addEventListener('DOMContentLoaded', () => {
+            if (mount()) {
+                observer.disconnect();
+            }
+        }, { once: true });
+
+        debugLog('waiting for DOM to mount block page', {
+            readyState: document.readyState,
+            hostname: location.hostname
+        });
     }
 
     renderBlockPage();
