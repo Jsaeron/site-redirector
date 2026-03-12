@@ -71,22 +71,48 @@
         }
     };
 
-    const TITLES = [
-        '这真的是你想要的吗？',
-        '未来的你会感谢现在的决定',
-        '此刻的选择，定义你的一天',
-        '你的目标还记得吗？',
-        '时间正在流逝...',
-        '这是最好的时间利用方式吗？',
-        '你确定不会后悔吗？',
-        '想想你真正想成为的人',
-        '休息一下，想想再决定',
-        '深呼吸，冷静一下',
-        '给自己30秒思考时间',
-        '暂停一下，整理思绪',
-        '慢下来，听听内心的声音',
-        '这是一个选择的时刻'
-    ];
+    const COPYWRITING = {
+        gentle: [
+            { title: '休息一下，想想再决定', subtitle: '先别急着点进去，给自己一点缓冲。' },
+            { title: '深呼吸，冷静一下', subtitle: '你不需要立刻回应这个冲动。' },
+            { title: '给自己30秒思考时间', subtitle: '暂停一下，看看现在真正重要的是什么。' },
+            { title: '暂停一下，整理思绪', subtitle: '也许你要的不是这个页面，而是一点喘息。' },
+            { title: '慢下来，听听内心的声音', subtitle: '先确认这是不是你此刻真正想做的事。' },
+            { title: '这是一个选择的时刻', subtitle: '今天的节奏，要不要继续守住？' },
+            { title: '这一刻，值得更清醒一点', subtitle: '别把注意力随手交出去。' },
+            { title: '先稳住，再决定', subtitle: '冲动过去之后，判断通常会更准。' }
+        ],
+        strict: [
+            { title: '别让“就看一眼”偷走半小时', subtitle: '你已经知道点开之后会发生什么。' },
+            { title: '注意力很贵，别随手花掉', subtitle: '现在退出，比一会儿后悔要容易。' },
+            { title: '你确定不会后悔吗？', subtitle: '这是分心，不是放松。' },
+            { title: '你来这里，是有意图，还是只是习惯？', subtitle: '别让习惯替你做决定。' },
+            { title: '别把今天最好的精力送给无关紧要的内容', subtitle: '真正重要的事还在等你推进。' },
+            { title: '真正难的不是工作，是抵抗分心', subtitle: '这一次忍住，比你想的更有价值。' },
+            { title: '控制感，就从这一次开始', subtitle: '不要把决定权交给推荐流。' },
+            { title: '这不是奖励，这是打断', subtitle: '现在停下，后面的状态才保得住。' }
+        ],
+        coach: [
+            { title: '未来的你会感谢现在的决定', subtitle: '每一次守住专注，都是在给自己加分。' },
+            { title: '此刻的选择，定义你的一天', subtitle: '先把正事推进一点，再回来也不迟。' },
+            { title: '你的目标还记得吗？', subtitle: '先把今天最重要的那一步走出去。' },
+            { title: '想想你真正想成为的人', subtitle: '专注不是天赋，是一次次小决定。' },
+            { title: '每一次忍住，都是在给自己加分', subtitle: '你在训练的是掌控力。' },
+            { title: '让今天保持一点锋利感', subtitle: '不要让状态在这里松掉。' },
+            { title: '你是来掌控时间的，不是来被时间带走的', subtitle: '守住这一分钟，后面会轻松很多。' },
+            { title: '先完成，再奖励自己', subtitle: '把分心留到任务推进之后。' }
+        ],
+        funny: [
+            { title: '算法已经准备好把你打包带走了', subtitle: '你现在还有机会体面撤退。' },
+            { title: '推荐流：欢迎回家。你：先等等。', subtitle: '别被熟练地带偏。' },
+            { title: '就看一眼，通常是本日最大谎言', subtitle: '这句话你应该已经听过很多次了。' },
+            { title: '再点下去，时间会表演消失术', subtitle: '而且是无痕消失。' },
+            { title: '你的手很快，但理智还能追上', subtitle: '给它30秒。' },
+            { title: '页面很精彩，代价也很稳定', subtitle: '半小时起步，专注归零。' },
+            { title: '你不是来摸鱼的，你只是路过鱼塘', subtitle: '路过就好，不要下水。' },
+            { title: '今天和分心拉扯了吗？先别让它赢', subtitle: '这一局还能翻。' }
+        ]
+    };
 
     const BLOCK_PAGE_TITLE = 'Site Redirector Pro';
     const ROOT_ID = 'site-redirector-root';
@@ -119,8 +145,41 @@
         return new Date().toISOString().slice(0, 10);
     }
 
-    function getRandomTitle() {
-        return TITLES[Math.floor(Math.random() * TITLES.length)];
+    function pickRandom(items) {
+        return items[Math.floor(Math.random() * items.length)];
+    }
+
+    function getCopyTone(stats, streakDays) {
+        if (isForceModeEnabled()) {
+            return 'strict';
+        }
+        if (streakDays >= 7) {
+            return 'coach';
+        }
+        if (stats.todayCount >= 4) {
+            return 'strict';
+        }
+        if (stats.todayCount === 3) {
+            return 'funny';
+        }
+        return 'gentle';
+    }
+
+    function getCopywriting(stats, streakDays) {
+        const tone = getCopyTone(stats, streakDays);
+        const entry = pickRandom(COPYWRITING[tone]);
+        const toneLabel = {
+            gentle: '温和提醒',
+            strict: '直接制动',
+            coach: '目标驱动',
+            funny: '轻松吐槽'
+        }[tone];
+        return {
+            tone,
+            toneLabel,
+            title: entry.title,
+            subtitle: entry.subtitle
+        };
     }
 
     function getThemeMode() {
@@ -759,6 +818,7 @@
         const streakDays = getFocusStreakDays();
         const summary = getWeeklySummary();
         const topSite = summary.topSites[0] ? summary.topSites[0][0] : '暂无';
+        const copy = getCopywriting(stats, streakDays);
         const warningText = [];
         if (isForceModeEnabled()) {
             warningText.push('强制模式：本次不能选择继续摸鱼');
@@ -769,10 +829,11 @@
         return `
             <div class="sr-container">
                 <div class="sr-icon" id="sr-emoji">🛑</div>
-                <div class="sr-title">${getRandomTitle()}</div>
+                <div class="sr-title">${copy.title}</div>
                 <div class="sr-subtitle">${hostname}</div>
+                <div class="sr-meta">${copy.subtitle}</div>
                 <div class="sr-count">今日第 <strong>${stats.todayCount}</strong> 次 / 累计第 <strong>${stats.totalCount}</strong> 次被拦截</div>
-                <div class="sr-meta">连续专注 <strong>${streakDays}</strong> 天 · 本周最易分心站点 <strong>${topSite}</strong> · 成就：<strong>${getAchievementText(stats, streakDays)}</strong></div>
+                <div class="sr-meta">连续专注 <strong>${streakDays}</strong> 天 · 本周最易分心站点 <strong>${topSite}</strong> · 成就：<strong>${getAchievementText(stats, streakDays)}</strong> · 文案风格：<strong>${copy.toneLabel}</strong></div>
                 ${warningText.length ? `<div class="sr-warning">${warningText.join(' · ')}</div>` : ''}
                 <div class="sr-timer" id="sr-countdown">${Math.max(1, Math.ceil((session.expiresAt - Date.now()) / 1000))}</div>
                 <div class="sr-hint" id="sr-hint">${Math.max(1, Math.ceil((session.expiresAt - Date.now()) / 1000))}秒冷静期后做出你的选择</div>
