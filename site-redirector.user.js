@@ -2,7 +2,7 @@
 // @name         Site Redirector Pro
 // @name:zh-CN   网站重定向助手
 // @namespace    https://github.com/Jsaeron/site-redirector
-// @version      1.7.0
+// @version      1.7.1
 // @description  Block distracting websites with a cooldown timer and redirect to productive sites
 // @description:zh-CN  拦截分心网站，冷静倒计时后重定向到指定网站，帮助你保持专注
 // @author       Daniel
@@ -123,6 +123,12 @@
     const REASONS = ['逃避任务', '无聊', '习惯性打开', '想看一眼', '社交回复', '其他'];
     const normalizedDomain = normalizeDomain(location.hostname);
     const debugEnabled = GM_getValue(STORAGE.debugMode, false);
+    const runtimeState = {
+        menuRegistered: false,
+        blockPageRequested: false,
+        quotaSessionStarted: false,
+        startupChecksInstalled: false
+    };
 
     function logDebug() {
         if (!debugEnabled) {
@@ -447,6 +453,13 @@
         };
     }
 
+    function getCurrentBlockStats() {
+        return {
+            totalCount: GM_getValue(STORAGE.blockCount, 0),
+            todayCount: GM_getValue('blockCount_' + getTodayStr(), 0)
+        };
+    }
+
     function fetchJson(url, onSuccess, fallback) {
         GM_xmlhttpRequest({
             method: 'GET',
@@ -465,6 +478,11 @@
     }
 
     function registerMenuCommands() {
+        if (runtimeState.menuRegistered) {
+            return;
+        }
+        runtimeState.menuRegistered = true;
+
         GM_registerMenuCommand('🎯 设置重定向目标', () => {
             const current = getTarget();
             const input = prompt('请输入重定向目标网址：', current);
@@ -1085,34 +1103,105 @@
         }
     }
 
-    function main() {
-        registerMenuCommands();
-
+    function evaluateBlocking(trigger) {
+        if (runtimeState.blockPageRequested || document.getElementById(ROOT_ID)) {
+            return true;
+        }
         if (!isBlockedDomain(location.hostname)) {
-            logDebug('hostname not blocked', location.hostname);
+            logDebug('hostname not blocked', {
+                hostname: location.hostname,
+                trigger
+            });
             return;
         }
 
         if (canAccessWithinQuota(normalizedDomain)) {
-            logDebug('within quota, allow access', normalizedDomain);
-            startQuotaSession(normalizedDomain);
+            if (!runtimeState.quotaSessionStarted) {
+                runtimeState.quotaSessionStarted = true;
+                logDebug('within quota, allow access', {
+                    domain: normalizedDomain,
+                    trigger
+                });
+                startQuotaSession(normalizedDomain);
+            }
             return;
         }
 
         if (isBypassed(location.hostname)) {
-            logDebug('bypass active', location.hostname);
+            logDebug('bypass active', {
+                hostname: location.hostname,
+                trigger
+            });
             return;
         }
 
         const existingSession = getBlockSession(normalizedDomain);
         const session = existingSession || startOrRefreshBlockSession(normalizedDomain);
-        const stats = existingSession
-            ? {
-                totalCount: GM_getValue(STORAGE.blockCount, 0),
-                todayCount: GM_getValue('blockCount_' + getTodayStr(), 0)
-            }
-            : incrementBlockStats(normalizedDomain);
+        const stats = existingSession ? getCurrentBlockStats() : incrementBlockStats(normalizedDomain);
+        runtimeState.blockPageRequested = true;
+        logDebug('block page requested', {
+            hostname: location.hostname,
+            trigger,
+            reusedSession: Boolean(existingSession)
+        });
         mountBlockPage(stats, session);
+        return true;
+    }
+
+    function installStartupRechecks() {
+        if (runtimeState.startupChecksInstalled) {
+            return;
+        }
+        runtimeState.startupChecksInstalled = true;
+
+        const recheck = (trigger) => {
+            if (document.visibilityState === 'prerender') {
+                return;
+            }
+            evaluateBlocking(trigger);
+        };
+
+        if (document.prerendering) {
+            document.addEventListener('prerenderingchange', () => {
+                recheck('prerenderingchange');
+            }, { once: true });
+        }
+
+        [150, 600, 1500].forEach((delay) => {
+            window.setTimeout(() => {
+                recheck(`startup-timeout:${delay}`);
+            }, delay);
+        });
+
+        if (document.readyState === 'loading') {
+            window.addEventListener('DOMContentLoaded', () => {
+                recheck('DOMContentLoaded');
+            }, { once: true });
+        }
+
+        window.addEventListener('load', () => {
+            recheck('load');
+        }, { once: true });
+
+        window.addEventListener('pageshow', () => {
+            recheck('pageshow');
+        });
+
+        window.addEventListener('focus', () => {
+            recheck('focus');
+        });
+
+        document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState === 'visible') {
+                recheck('visibilitychange');
+            }
+        });
+    }
+
+    function main() {
+        registerMenuCommands();
+        installStartupRechecks();
+        evaluateBlocking('initial');
     }
 
     main();
