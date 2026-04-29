@@ -683,19 +683,71 @@
                 display: flex;
                 align-items: center;
                 justify-content: center;
-                padding: 24px;
-                background: rgba(10, 12, 18, 0.72);
+                padding: 20px;
+                background: rgba(15, 23, 42, 0.76);
                 color: #172033;
                 font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
             }
             #${SETTINGS_ROOT_ID} .sr-settings-panel {
-                width: min(100%, 920px);
-                max-height: min(92vh, 860px);
-                overflow: auto;
+                width: min(100%, 1080px);
+                height: min(92vh, 820px);
+                display: grid;
+                grid-template-columns: 238px minmax(0, 1fr);
                 background: #f8fafc;
                 border: 1px solid rgba(148, 163, 184, 0.45);
                 border-radius: 8px;
                 box-shadow: 0 24px 70px rgba(15, 23, 42, 0.32);
+                overflow: hidden;
+            }
+            #${SETTINGS_ROOT_ID} .sr-console-nav {
+                display: flex;
+                flex-direction: column;
+                gap: 10px;
+                padding: 18px;
+                background: #0f172a;
+                color: #e2e8f0;
+            }
+            #${SETTINGS_ROOT_ID} .sr-settings-title {
+                font-size: 18px;
+                font-weight: 700;
+            }
+            #${SETTINGS_ROOT_ID} .sr-settings-subtitle {
+                color: #94a3b8;
+                font-size: 13px;
+                margin-top: 4px;
+                line-height: 1.45;
+            }
+            #${SETTINGS_ROOT_ID} .sr-nav-list {
+                display: grid;
+                gap: 8px;
+                margin-top: 10px;
+            }
+            #${SETTINGS_ROOT_ID} .sr-nav-item {
+                display: flex;
+                align-items: center;
+                gap: 10px;
+                border: 1px solid rgba(148, 163, 184, 0.18);
+                border-radius: 8px;
+                padding: 10px 11px;
+                color: #cbd5e1;
+                font-size: 13px;
+                font-weight: 650;
+                background: rgba(255, 255, 255, 0.03);
+            }
+            #${SETTINGS_ROOT_ID} .sr-nav-item strong {
+                display: grid;
+                place-items: center;
+                width: 24px;
+                height: 24px;
+                border-radius: 6px;
+                background: rgba(37, 99, 235, 0.22);
+                color: #bfdbfe;
+            }
+            #${SETTINGS_ROOT_ID} .sr-console-main {
+                min-width: 0;
+                overflow: auto;
+                display: grid;
+                grid-template-rows: auto 1fr auto;
             }
             #${SETTINGS_ROOT_ID} .sr-settings-header {
                 position: sticky;
@@ -705,24 +757,56 @@
                 align-items: center;
                 justify-content: space-between;
                 gap: 16px;
-                padding: 18px 20px;
-                background: #fff;
+                padding: 16px 20px;
+                background: rgba(255, 255, 255, 0.94);
                 border-bottom: 1px solid #e2e8f0;
+                backdrop-filter: blur(14px);
             }
-            #${SETTINGS_ROOT_ID} .sr-settings-title {
-                font-size: 18px;
-                font-weight: 700;
+            #${SETTINGS_ROOT_ID} .sr-status-strip {
+                display: flex;
+                flex-wrap: wrap;
+                gap: 8px;
             }
-            #${SETTINGS_ROOT_ID} .sr-settings-subtitle {
-                color: #64748b;
-                font-size: 13px;
-                margin-top: 4px;
+            #${SETTINGS_ROOT_ID} .sr-status-pill {
+                border: 1px solid #dbe3ee;
+                border-radius: 999px;
+                background: #fff;
+                color: #475569;
+                font-size: 12px;
+                padding: 6px 10px;
             }
             #${SETTINGS_ROOT_ID} .sr-settings-body {
                 display: grid;
-                grid-template-columns: minmax(0, 1fr) 280px;
-                gap: 18px;
+                grid-template-columns: minmax(0, 1fr) 260px;
+                align-items: start;
+                gap: 16px;
                 padding: 20px;
+            }
+            #${SETTINGS_ROOT_ID} .sr-section-stack {
+                display: grid;
+                gap: 16px;
+            }
+            #${SETTINGS_ROOT_ID} .sr-section {
+                background: #fff;
+                border: 1px solid #e2e8f0;
+                border-radius: 8px;
+                padding: 16px;
+            }
+            #${SETTINGS_ROOT_ID} .sr-section-title {
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                gap: 12px;
+                margin-bottom: 14px;
+            }
+            #${SETTINGS_ROOT_ID} .sr-section-title h3 {
+                margin: 0;
+                font-size: 15px;
+                line-height: 1.2;
+            }
+            #${SETTINGS_ROOT_ID} .sr-section-title span {
+                color: #64748b;
+                font-size: 12px;
             }
             #${SETTINGS_ROOT_ID} .sr-settings-grid {
                 display: grid;
@@ -785,6 +869,8 @@
                 display: flex;
                 flex-direction: column;
                 gap: 12px;
+                position: sticky;
+                top: 84px;
             }
             #${SETTINGS_ROOT_ID} .sr-stat-box {
                 background: #fff;
@@ -805,7 +891,9 @@
                 display: flex;
                 flex-wrap: wrap;
                 gap: 10px;
-                margin-top: 16px;
+                padding: 14px 20px;
+                border-top: 1px solid #e2e8f0;
+                background: #fff;
             }
             #${SETTINGS_ROOT_ID} button {
                 border: 1px solid #cbd5e1;
@@ -838,12 +926,36 @@
             #${SETTINGS_ROOT_ID} .sr-import-export {
                 min-height: 170px;
             }
-            @media (max-width: 760px) {
+            @media (max-width: 880px) {
                 #${SETTINGS_ROOT_ID} {
                     padding: 10px;
+                    align-items: stretch;
+                }
+                #${SETTINGS_ROOT_ID} .sr-settings-panel {
+                    height: auto;
+                    max-height: calc(100vh - 20px);
+                    grid-template-columns: 1fr;
+                    overflow: auto;
+                }
+                #${SETTINGS_ROOT_ID} .sr-console-nav {
+                    display: none;
                 }
                 #${SETTINGS_ROOT_ID} .sr-settings-body,
                 #${SETTINGS_ROOT_ID} .sr-settings-grid {
+                    grid-template-columns: 1fr;
+                }
+                #${SETTINGS_ROOT_ID} .sr-settings-side {
+                    position: static;
+                    display: grid;
+                    grid-template-columns: repeat(2, minmax(0, 1fr));
+                }
+            }
+            @media (max-width: 560px) {
+                #${SETTINGS_ROOT_ID} .sr-settings-header {
+                    align-items: flex-start;
+                    flex-direction: column;
+                }
+                #${SETTINGS_ROOT_ID} .sr-settings-side {
                     grid-template-columns: 1fr;
                 }
             }
@@ -854,72 +966,119 @@
         const stats = getCurrentBlockStats();
         const summary = getWeeklySummary();
         const themeMode = getThemeMode();
+        const blockRules = getBlockRules();
+        const allowRules = getAllowRules();
+        const forceLabel = isForceModeEnabled() ? '强制模式' : '冷静模式';
         return `
             <div class="sr-settings-panel" role="dialog" aria-modal="true">
-                <div class="sr-settings-header">
+                <div class="sr-console-nav">
                     <div>
                         <div class="sr-settings-title">Site Redirector Pro 设置</div>
-                        <div class="sr-settings-subtitle">规则按“白名单优先、再匹配拦截规则”的顺序执行</div>
+                        <div class="sr-settings-subtitle">规则按白名单优先、再匹配拦截规则的顺序执行。</div>
                     </div>
-                    <button type="button" id="sr-settings-close">关闭</button>
+                    <div class="sr-nav-list">
+                        <div class="sr-nav-item"><strong>1</strong> 基础</div>
+                        <div class="sr-nav-item"><strong>2</strong> 规则</div>
+                        <div class="sr-nav-item"><strong>3</strong> 策略</div>
+                        <div class="sr-nav-item"><strong>4</strong> 数据</div>
+                    </div>
                 </div>
-                <div class="sr-settings-body">
-                    <div>
-                        <div class="sr-settings-grid">
-                            <div class="sr-field-full">
-                                <label for="sr-setting-target">重定向目标</label>
-                                <input id="sr-setting-target" value="${escapeHtml(getTarget())}" placeholder="https://claude.ai">
-                            </div>
-                            <div class="sr-field-full">
-                                <label for="sr-setting-block-rules">拦截规则</label>
-                                <textarea id="sr-setting-block-rules" spellcheck="false">${escapeHtml(getBlockRules().join('\n'))}</textarea>
-                                <div class="sr-help">每行一条：域名 example.com，路径 youtube.com/shorts*，正则 regex:^https://example\\.com/.*</div>
-                            </div>
-                            <div class="sr-field-full">
-                                <label for="sr-setting-allow-rules">白名单规则</label>
-                                <textarea id="sr-setting-allow-rules" spellcheck="false">${escapeHtml(getAllowRules().join('\n'))}</textarea>
-                                <div class="sr-help">白名单命中后直接放行，适合 messages、docs、工作区路径。</div>
-                            </div>
-                            <div>
-                                <label for="sr-setting-quota-minutes">每日可访问分钟数</label>
-                                <input id="sr-setting-quota-minutes" type="number" min="0" step="1" value="${getDailyQuotaMinutes()}">
-                            </div>
-                            <div>
-                                <label for="sr-setting-quota-visits">每日可访问次数</label>
-                                <input id="sr-setting-quota-visits" type="number" min="0" step="1" value="${getDailyQuotaVisits()}">
-                            </div>
-                            <div>
-                                <label for="sr-setting-theme">主题</label>
-                                <select id="sr-setting-theme">
-                                    <option value="auto"${themeMode === 'auto' ? ' selected' : ''}>跟随系统</option>
-                                    <option value="light"${themeMode === 'light' ? ' selected' : ''}>明亮模式</option>
-                                    <option value="dark"${themeMode === 'dark' ? ' selected' : ''}>暗黑模式</option>
-                                </select>
-                            </div>
-                            <div>
-                                <label>强制模式</label>
-                                <div class="sr-check-row">
-                                    <input id="sr-setting-force" type="checkbox"${isForceModeEnabled() ? ' checked' : ''}>
-                                    <span>禁用继续摸鱼</span>
+                <div class="sr-console-main">
+                    <div class="sr-settings-header">
+                        <div class="sr-status-strip">
+                            <span class="sr-status-pill">${forceLabel}</span>
+                            <span class="sr-status-pill">${blockRules.length} 条拦截规则</span>
+                            <span class="sr-status-pill">${allowRules.length} 条白名单</span>
+                            <span class="sr-status-pill">今日 ${stats.todayCount} 次</span>
+                        </div>
+                        <button type="button" id="sr-settings-close">关闭</button>
+                    </div>
+                    <div class="sr-settings-body">
+                        <div class="sr-section-stack">
+                            <div class="sr-section">
+                                <div class="sr-section-title">
+                                    <h3>基础设置</h3>
+                                    <span>跳转目标和外观</span>
+                                </div>
+                                <div class="sr-settings-grid">
+                                    <div class="sr-field-full">
+                                        <label for="sr-setting-target">重定向目标</label>
+                                        <input id="sr-setting-target" value="${escapeHtml(getTarget())}" placeholder="https://claude.ai">
+                                    </div>
+                                    <div>
+                                        <label for="sr-setting-theme">主题</label>
+                                        <select id="sr-setting-theme">
+                                            <option value="auto"${themeMode === 'auto' ? ' selected' : ''}>跟随系统</option>
+                                            <option value="light"${themeMode === 'light' ? ' selected' : ''}>明亮模式</option>
+                                            <option value="dark"${themeMode === 'dark' ? ' selected' : ''}>暗黑模式</option>
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label>强制模式</label>
+                                        <div class="sr-check-row">
+                                            <input id="sr-setting-force" type="checkbox"${isForceModeEnabled() ? ' checked' : ''}>
+                                            <span>禁用继续摸鱼</span>
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
-                            <div class="sr-field-full">
-                                <label for="sr-setting-import-export">导入 / 导出 JSON</label>
-                                <textarea id="sr-setting-import-export" class="sr-import-export" spellcheck="false" placeholder="点击导出生成 JSON，或粘贴 JSON 后点击导入"></textarea>
+                            <div class="sr-section">
+                                <div class="sr-section-title">
+                                    <h3>规则控制</h3>
+                                    <span>白名单优先生效</span>
+                                </div>
+                                <div class="sr-settings-grid">
+                                    <div class="sr-field-full">
+                                        <label for="sr-setting-block-rules">拦截规则</label>
+                                        <textarea id="sr-setting-block-rules" spellcheck="false">${escapeHtml(blockRules.join('\n'))}</textarea>
+                                        <div class="sr-help">每行一条：域名 example.com，路径 youtube.com/shorts*，正则 regex:^https://example\\.com/.*</div>
+                                    </div>
+                                    <div class="sr-field-full">
+                                        <label for="sr-setting-allow-rules">白名单规则</label>
+                                        <textarea id="sr-setting-allow-rules" spellcheck="false">${escapeHtml(allowRules.join('\n'))}</textarea>
+                                        <div class="sr-help">命中后直接放行，适合 messages、docs、工作区路径。</div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="sr-section">
+                                <div class="sr-section-title">
+                                    <h3>配额策略</h3>
+                                    <span>0 表示禁用</span>
+                                </div>
+                                <div class="sr-settings-grid">
+                                    <div>
+                                        <label for="sr-setting-quota-minutes">每日可访问分钟数</label>
+                                        <input id="sr-setting-quota-minutes" type="number" min="0" step="1" value="${getDailyQuotaMinutes()}">
+                                    </div>
+                                    <div>
+                                        <label for="sr-setting-quota-visits">每日可访问次数</label>
+                                        <input id="sr-setting-quota-visits" type="number" min="0" step="1" value="${getDailyQuotaVisits()}">
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="sr-section">
+                                <div class="sr-section-title">
+                                    <h3>配置备份</h3>
+                                    <span>导出或导入 JSON</span>
+                                </div>
+                                <div class="sr-field-full">
+                                    <label for="sr-setting-import-export">导入 / 导出 JSON</label>
+                                    <textarea id="sr-setting-import-export" class="sr-import-export" spellcheck="false" placeholder="点击导出生成 JSON，或粘贴 JSON 后点击导入"></textarea>
+                                </div>
                             </div>
                         </div>
-                        <div class="sr-actions-row">
-                            <button type="button" class="sr-primary" id="sr-settings-save">保存设置</button>
-                            <button type="button" id="sr-settings-export">导出配置</button>
-                            <button type="button" id="sr-settings-import">导入配置</button>
-                            <button type="button" class="sr-danger" id="sr-settings-reset-stats">重置统计</button>
+                        <div class="sr-settings-side">
+                            <div class="sr-stat-box"><strong>${stats.todayCount}</strong><span>今日拦截</span></div>
+                            <div class="sr-stat-box"><strong>${stats.totalCount}</strong><span>累计拦截</span></div>
+                            <div class="sr-stat-box"><strong>${summary.weeklyBlocks}</strong><span>近 7 天拦截</span></div>
+                            <div class="sr-stat-box"><strong>${summary.streakDays}</strong><span>连续专注天数</span></div>
                         </div>
                     </div>
-                    <div class="sr-settings-side">
-                        <div class="sr-stat-box"><strong>${stats.todayCount}</strong><span>今日拦截</span></div>
-                        <div class="sr-stat-box"><strong>${stats.totalCount}</strong><span>累计拦截</span></div>
-                        <div class="sr-stat-box"><strong>${summary.weeklyBlocks}</strong><span>近 7 天拦截</span></div>
-                        <div class="sr-stat-box"><strong>${summary.streakDays}</strong><span>连续专注天数</span></div>
+                    <div class="sr-actions-row">
+                        <button type="button" class="sr-primary" id="sr-settings-save">保存设置</button>
+                        <button type="button" id="sr-settings-export">导出配置</button>
+                        <button type="button" id="sr-settings-import">导入配置</button>
+                        <button type="button" class="sr-danger" id="sr-settings-reset-stats">重置统计</button>
                     </div>
                 </div>
             </div>
@@ -1215,67 +1374,129 @@
                 display: flex;
                 align-items: center;
                 justify-content: center;
-                padding: 24px;
+                padding: 28px;
                 background: ${theme.bg};
                 color: ${theme.text};
                 font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-                text-align: center;
             }
             #${ROOT_ID} .sr-container {
-                width: min(100%, 720px);
+                width: min(100%, 1040px);
+                display: grid;
+                grid-template-columns: minmax(0, 1fr) 280px;
+                gap: 18px;
+                align-items: stretch;
+            }
+            #${ROOT_ID} .sr-main {
+                min-height: 560px;
+                display: grid;
+                grid-template-rows: auto 1fr auto;
+                border: 1px solid rgba(255, 255, 255, 0.12);
+                border-radius: 8px;
+                background: rgba(255, 255, 255, 0.06);
+                backdrop-filter: blur(18px);
+                box-shadow: 0 24px 70px rgba(0, 0, 0, 0.22);
+                overflow: hidden;
+            }
+            #${ROOT_ID} .sr-topbar {
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                gap: 12px;
+                padding: 18px 20px;
+                border-bottom: 1px solid rgba(255, 255, 255, 0.10);
+            }
+            #${ROOT_ID} .sr-site {
+                min-width: 0;
+                font-size: 14px;
+                font-weight: 700;
+                color: ${theme.accent};
+                overflow: hidden;
+                text-overflow: ellipsis;
+                white-space: nowrap;
+            }
+            #${ROOT_ID} .sr-mode {
+                flex: 0 0 auto;
+                border: 1px solid rgba(255, 255, 255, 0.16);
+                border-radius: 999px;
+                padding: 5px 10px;
+                font-size: 14px;
+                color: ${theme.textMuted};
+            }
+            #${ROOT_ID} .sr-focus {
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                justify-content: center;
+                text-align: center;
+                padding: 34px 28px;
             }
             #${ROOT_ID} .sr-icon {
-                font-size: 64px;
-                margin-bottom: 20px;
-            }
-            #${ROOT_ID} .sr-title {
-                font-size: 28px;
-                font-weight: 600;
-                margin-bottom: 10px;
-            }
-            #${ROOT_ID} .sr-subtitle {
-                color: ${theme.accent};
-                margin-bottom: 8px;
-                font-size: 14px;
-            }
-            #${ROOT_ID} .sr-count {
-                color: ${theme.textMuted};
-                margin-bottom: 18px;
-            }
-            #${ROOT_ID} .sr-meta {
-                color: ${theme.textHint};
-                font-size: 13px;
-                margin-bottom: 22px;
-                line-height: 1.7;
-            }
-            #${ROOT_ID} .sr-warning {
-                color: ${theme.accent};
-                font-size: 13px;
+                font-size: 42px;
                 margin-bottom: 16px;
             }
+            #${ROOT_ID} .sr-title {
+                max-width: 720px;
+                font-size: 34px;
+                font-weight: 760;
+                line-height: 1.15;
+                margin-bottom: 12px;
+                letter-spacing: 0;
+            }
+            #${ROOT_ID} .sr-subcopy {
+                max-width: 620px;
+                color: ${theme.textMuted};
+                font-size: 15px;
+                line-height: 1.7;
+                margin-bottom: 30px;
+            }
+            #${ROOT_ID} .sr-progress {
+                --sr-progress: 1;
+                position: relative;
+                width: 188px;
+                height: 188px;
+                display: grid;
+                place-items: center;
+                margin-bottom: 22px;
+                border-radius: 50%;
+                background:
+                    conic-gradient(${theme.accent} calc(var(--sr-progress) * 1turn), rgba(255, 255, 255, 0.12) 0),
+                    rgba(255, 255, 255, 0.04);
+                box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.10);
+            }
+            #${ROOT_ID} .sr-progress::after {
+                content: "";
+                position: absolute;
+                inset: 13px;
+                border-radius: 50%;
+                background: ${theme.bg};
+                filter: brightness(0.96);
+            }
             #${ROOT_ID} .sr-timer {
+                position: relative;
+                z-index: 1;
                 font-size: 72px;
                 font-weight: 700;
                 color: ${theme.accent};
-                margin-bottom: 20px;
                 font-variant-numeric: tabular-nums;
+                line-height: 1;
             }
             #${ROOT_ID} .sr-hint {
                 color: ${theme.textHint};
                 font-size: 14px;
             }
             #${ROOT_ID} .sr-actions {
-                margin-top: 30px;
+                margin-top: 22px;
                 display: flex;
                 gap: 12px;
                 justify-content: center;
             }
             #${ROOT_ID} .sr-btn {
-                padding: 10px 24px;
+                padding: 11px 24px;
                 border-radius: 6px;
                 cursor: pointer;
                 transition: all 0.2s;
                 font-size: 14px;
+                font-weight: 650;
             }
             #${ROOT_ID} .sr-btn-secondary {
                 background: transparent;
@@ -1288,22 +1509,24 @@
             }
             #${ROOT_ID} .sr-choice {
                 display: none;
-                margin-top: 30px;
+                width: min(100%, 560px);
+                margin-top: 22px;
             }
             #${ROOT_ID} .sr-choice-title {
-                font-size: 20px;
-                margin-bottom: 20px;
+                font-size: 17px;
+                font-weight: 700;
+                margin-bottom: 14px;
                 color: ${theme.choiceTitle};
             }
             #${ROOT_ID} .sr-pills {
                 display: flex;
-                gap: 30px;
+                gap: 12px;
                 justify-content: center;
                 flex-wrap: wrap;
             }
             #${ROOT_ID} .sr-pill {
-                padding: 20px 40px;
-                border-radius: 30px;
+                padding: 16px 28px;
+                border-radius: 8px;
                 cursor: pointer;
                 transition: all 0.3s;
                 font-size: 16px;
@@ -1336,15 +1559,13 @@
                 font-weight: normal;
             }
             #${ROOT_ID} .sr-quote-wrap {
-                margin-top: 40px;
-                padding: 20px;
-                max-width: 500px;
-                margin-left: auto;
-                margin-right: auto;
+                padding: 18px 22px;
+                border-top: 1px solid rgba(255, 255, 255, 0.10);
+                text-align: center;
             }
             #${ROOT_ID} .sr-quote {
                 color: ${theme.quoteText};
-                font-size: 16px;
+                font-size: 14px;
                 font-style: italic;
                 line-height: 1.6;
             }
@@ -1353,16 +1574,109 @@
                 font-size: 12px;
                 margin-top: 10px;
             }
+            #${ROOT_ID} .sr-side {
+                display: flex;
+                flex-direction: column;
+                gap: 12px;
+            }
+            #${ROOT_ID} .sr-panel {
+                border: 1px solid rgba(255, 255, 255, 0.12);
+                border-radius: 8px;
+                background: rgba(255, 255, 255, 0.06);
+                padding: 16px;
+            }
+            #${ROOT_ID} .sr-panel-title {
+                color: ${theme.textHint};
+                font-size: 12px;
+                font-weight: 700;
+                text-transform: uppercase;
+                margin-bottom: 12px;
+            }
+            #${ROOT_ID} .sr-stat-grid {
+                display: grid;
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+                gap: 10px;
+            }
+            #${ROOT_ID} .sr-stat strong {
+                display: block;
+                color: ${theme.text};
+                font-size: 24px;
+                font-variant-numeric: tabular-nums;
+            }
+            #${ROOT_ID} .sr-stat span {
+                color: ${theme.textHint};
+                font-size: 12px;
+            }
+            #${ROOT_ID} .sr-line {
+                display: flex;
+                justify-content: space-between;
+                gap: 12px;
+                padding: 8px 0;
+                border-top: 1px solid rgba(255, 255, 255, 0.09);
+                color: ${theme.textMuted};
+                font-size: 13px;
+            }
+            #${ROOT_ID} .sr-line:first-of-type {
+                border-top: 0;
+                padding-top: 0;
+            }
+            #${ROOT_ID} .sr-line strong {
+                color: ${theme.text};
+                text-align: right;
+                overflow: hidden;
+                text-overflow: ellipsis;
+                white-space: nowrap;
+            }
+            #${ROOT_ID} .sr-warning {
+                color: ${theme.accent};
+                font-size: 13px;
+                line-height: 1.55;
+            }
+            @media (max-width: 880px) {
+                #${ROOT_ID} {
+                    padding: 16px;
+                    align-items: flex-start;
+                    overflow: auto;
+                }
+                #${ROOT_ID} .sr-container {
+                    grid-template-columns: 1fr;
+                }
+                #${ROOT_ID} .sr-main {
+                    min-height: auto;
+                }
+                #${ROOT_ID} .sr-side {
+                    order: -1;
+                    display: grid;
+                    grid-template-columns: repeat(2, minmax(0, 1fr));
+                }
+            }
             @media (max-width: 640px) {
+                #${ROOT_ID} {
+                    padding: 10px;
+                }
+                #${ROOT_ID} .sr-topbar {
+                    align-items: flex-start;
+                    flex-direction: column;
+                }
+                #${ROOT_ID} .sr-focus {
+                    padding: 28px 16px;
+                }
                 #${ROOT_ID} .sr-title {
-                    font-size: 22px;
+                    font-size: 26px;
+                }
+                #${ROOT_ID} .sr-progress {
+                    width: 156px;
+                    height: 156px;
                 }
                 #${ROOT_ID} .sr-timer {
-                    font-size: 56px;
+                    font-size: 58px;
                 }
                 #${ROOT_ID} .sr-pill {
                     width: 100%;
                     min-width: 0;
+                }
+                #${ROOT_ID} .sr-side {
+                    grid-template-columns: 1fr;
                 }
             }
         `;
@@ -1380,37 +1694,63 @@
         if (isIncognitoContext()) {
             warningText.push('无痕模式提醒：用户脚本可能受浏览器隐私设置影响');
         }
+        const remaining = Math.max(1, Math.ceil((session.expiresAt - Date.now()) / 1000));
+        const progress = Math.max(0, Math.min(1, remaining / DEFAULTS.cooldown));
         return `
             <div class="sr-container">
-                <div class="sr-icon" id="sr-emoji">🛑</div>
-                <div class="sr-title">${copy.title}</div>
-                <div class="sr-subtitle">${hostname}</div>
-                <div class="sr-meta">${copy.subtitle}</div>
-                <div class="sr-count">今日第 <strong>${stats.todayCount}</strong> 次 / 累计第 <strong>${stats.totalCount}</strong> 次被拦截</div>
-                <div class="sr-meta">连续专注 <strong>${streakDays}</strong> 天 · 本周最易分心站点 <strong>${topSite}</strong> · 成就：<strong>${getAchievementText(stats, streakDays)}</strong> · 文案风格：<strong>${copy.toneLabel}</strong></div>
-                ${warningText.length ? `<div class="sr-warning">${warningText.join(' · ')}</div>` : ''}
-                <div class="sr-timer" id="sr-countdown">${Math.max(1, Math.ceil((session.expiresAt - Date.now()) / 1000))}</div>
-                <div class="sr-hint" id="sr-hint">${Math.max(1, Math.ceil((session.expiresAt - Date.now()) / 1000))}秒冷静期后做出你的选择</div>
-                <div class="sr-actions" id="sr-actions">
-                    ${isForceModeEnabled() ? '' : '<button class="sr-btn sr-btn-secondary" id="sr-skip">算了，回去干活</button>'}
-                </div>
-                <div class="sr-choice" id="sr-choice">
-                    <div class="sr-choice-title">冷静期结束，做出你的选择</div>
-                    <div class="sr-pills">
-                        <button class="sr-pill sr-pill-blue" id="sr-blue-pill">
-                            💼 回去干活
-                            <span class="sr-pill-label">前往工作页面</span>
-                        </button>
-                        ${isForceModeEnabled() ? '' : `
-                        <button class="sr-pill sr-pill-red" id="sr-red-pill">
-                            🎮 就要摸鱼
-                            <span class="sr-pill-label">继续访问此网站</span>
-                        </button>`}
+                <div class="sr-main">
+                    <div class="sr-topbar">
+                        <div class="sr-site">${escapeHtml(hostname)}</div>
+                        <div class="sr-mode">${isForceModeEnabled() ? '强制模式' : '冷静模式'} · ${copy.toneLabel}</div>
+                    </div>
+                    <div class="sr-focus">
+                        <div class="sr-icon" id="sr-emoji">🛑</div>
+                        <div class="sr-title">${copy.title}</div>
+                        <div class="sr-subcopy">${copy.subtitle}</div>
+                        <div class="sr-progress" id="sr-progress" style="--sr-progress: ${progress}">
+                            <div class="sr-timer" id="sr-countdown">${remaining}</div>
+                        </div>
+                        <div class="sr-hint" id="sr-hint">${remaining}秒冷静期后做出你的选择</div>
+                        <div class="sr-actions" id="sr-actions">
+                            ${isForceModeEnabled() ? '' : '<button class="sr-btn sr-btn-secondary" id="sr-skip">算了，回去干活</button>'}
+                        </div>
+                        <div class="sr-choice" id="sr-choice">
+                            <div class="sr-choice-title">冷静期结束，做出你的选择</div>
+                            <div class="sr-pills">
+                                <button class="sr-pill sr-pill-blue" id="sr-blue-pill">
+                                    💼 回去干活
+                                    <span class="sr-pill-label">前往工作页面</span>
+                                </button>
+                                ${isForceModeEnabled() ? '' : `
+                                <button class="sr-pill sr-pill-red" id="sr-red-pill">
+                                    🎮 就要摸鱼
+                                    <span class="sr-pill-label">继续访问此网站</span>
+                                </button>`}
+                            </div>
+                        </div>
+                    </div>
+                    <div class="sr-quote-wrap">
+                        <div class="sr-quote" id="sr-quote">加载中...</div>
+                        <div class="sr-quote-source" id="sr-quote-source"></div>
                     </div>
                 </div>
-                <div class="sr-quote-wrap">
-                    <div class="sr-quote" id="sr-quote">加载中...</div>
-                    <div class="sr-quote-source" id="sr-quote-source"></div>
+                <div class="sr-side">
+                    <div class="sr-panel">
+                        <div class="sr-panel-title">拦截统计</div>
+                        <div class="sr-stat-grid">
+                            <div class="sr-stat"><strong>${stats.todayCount}</strong><span>今日</span></div>
+                            <div class="sr-stat"><strong>${stats.totalCount}</strong><span>累计</span></div>
+                            <div class="sr-stat"><strong>${summary.weeklyBlocks}</strong><span>近 7 天</span></div>
+                            <div class="sr-stat"><strong>${streakDays}</strong><span>连续专注</span></div>
+                        </div>
+                    </div>
+                    <div class="sr-panel">
+                        <div class="sr-panel-title">当前判断</div>
+                        <div class="sr-line"><span>成就</span><strong>${getAchievementText(stats, streakDays)}</strong></div>
+                        <div class="sr-line"><span>本周高频站点</span><strong>${topSite}</strong></div>
+                        <div class="sr-line"><span>高峰时段</span><strong>${summary.topHour}:00</strong></div>
+                    </div>
+                    ${warningText.length ? `<div class="sr-panel sr-warning">${warningText.join(' · ')}</div>` : ''}
                 </div>
             </div>
         `;
@@ -1569,6 +1909,7 @@
 
     function wireBlockPageInteractions(root) {
         const countdownEl = root.querySelector('#sr-countdown');
+        const progressEl = root.querySelector('#sr-progress');
         const hintEl = root.querySelector('#sr-hint');
         const actionsEl = root.querySelector('#sr-actions');
         const choiceEl = root.querySelector('#sr-choice');
@@ -1583,6 +1924,9 @@
             if (countdownEl) {
                 countdownEl.textContent = String(remaining);
             }
+            if (progressEl) {
+                progressEl.style.setProperty('--sr-progress', String(Math.max(0, Math.min(1, remaining / DEFAULTS.cooldown))));
+            }
             if (hintEl && remaining > 0) {
                 hintEl.textContent = `${remaining}秒冷静期后做出你的选择`;
             }
@@ -1592,6 +1936,9 @@
             clearInterval(timer);
             if (countdownEl) {
                 countdownEl.textContent = '⏰';
+            }
+            if (progressEl) {
+                progressEl.style.setProperty('--sr-progress', '0');
             }
             if (hintEl) {
                 hintEl.textContent = '时间到！做出你的选择';
