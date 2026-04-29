@@ -2,7 +2,7 @@
 // @name         Site Redirector Pro
 // @name:zh-CN   网站重定向助手
 // @namespace    https://github.com/Jsaeron/site-redirector
-// @version      1.7.1
+// @version      1.8.0
 // @description  Block distracting websites with a cooldown timer and redirect to productive sites
 // @description:zh-CN  拦截分心网站，冷静倒计时后重定向到指定网站，帮助你保持专注
 // @author       Daniel
@@ -25,6 +25,8 @@
     const STORAGE = {
         redirectTarget: 'redirectTarget',
         blacklist: 'blacklist',
+        blockRules: 'blockRules',
+        allowRules: 'allowRules',
         blockCount: 'blockCount',
         blockCountBySite: 'blockCountBySite',
         dailyQuotaMinutes: 'dailyQuotaMinutes',
@@ -117,6 +119,8 @@
     const BLOCK_PAGE_TITLE = 'Site Redirector Pro';
     const ROOT_ID = 'site-redirector-root';
     const STYLE_ID = 'site-redirector-style';
+    const SETTINGS_ROOT_ID = 'site-redirector-settings-root';
+    const SETTINGS_STYLE_ID = 'site-redirector-settings-style';
     const ACTIVE_ATTR = 'data-site-redirector-active';
     const SESSION_PREFIX = 'blockSession_';
     const BYPASS_PREFIX = 'bypass_';
@@ -145,6 +149,118 @@
             .replace(/\/.*$/, '')
             .replace(/^\.+/, '')
             .replace(/\.+$/, '');
+    }
+
+    function escapeHtml(value) {
+        return String(value || '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+    }
+
+    function splitListInput(value) {
+        return String(value || '')
+            .split(/\n+/)
+            .flatMap((line) => {
+                const trimmed = line.trim();
+                return /^regex:/i.test(trimmed) ? [trimmed] : trimmed.split(/[,，；;]+/);
+            })
+            .map(item => item.trim())
+            .filter(Boolean);
+    }
+
+    function normalizeRule(value) {
+        const raw = String(value || '').trim();
+        if (!raw) {
+            return '';
+        }
+        if (/^regex:/i.test(raw)) {
+            return 'regex:' + raw.slice(6).trim();
+        }
+        try {
+            const url = new URL(raw);
+            const domain = normalizeDomain(url.hostname);
+            if (url.pathname === '/' && !url.search) {
+                return domain;
+            }
+            return domain + url.pathname + url.search;
+        } catch (error) {
+            return raw
+                .replace(/^(https?:\/\/)?(www\.)?/i, '')
+                .replace(/#.*$/, '')
+                .replace(/^\.+/, '')
+                .replace(/\.+$/, '');
+        }
+    }
+
+    function normalizeRuleList(value) {
+        const list = Array.isArray(value) ? value : splitListInput(value);
+        return Array.from(new Set(list.map(normalizeRule).filter(Boolean)));
+    }
+
+    function getBlockRules() {
+        const storedRules = GM_getValue(STORAGE.blockRules, null);
+        if (Array.isArray(storedRules)) {
+            const normalized = normalizeRuleList(storedRules);
+            if (normalized.length !== storedRules.length || normalized.some((rule, index) => rule !== storedRules[index])) {
+                GM_setValue(STORAGE.blockRules, normalized);
+            }
+            return normalized;
+        }
+        const legacy = getBlacklist();
+        GM_setValue(STORAGE.blockRules, legacy.slice());
+        return legacy;
+    }
+
+    function getAllowRules() {
+        const storedRules = GM_getValue(STORAGE.allowRules, []);
+        const normalized = normalizeRuleList(storedRules);
+        if (!Array.isArray(storedRules) || normalized.length !== storedRules.length || normalized.some((rule, index) => rule !== storedRules[index])) {
+            GM_setValue(STORAGE.allowRules, normalized);
+        }
+        return normalized;
+    }
+
+    function globToRegExp(pattern) {
+        const escaped = String(pattern || '').replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*');
+        return new RegExp('^' + escaped + '$');
+    }
+
+    function getUrlParts() {
+        return {
+            href: location.href,
+            host: normalizeDomain(location.hostname),
+            path: location.pathname + location.search
+        };
+    }
+
+    function matchRule(rule, parts) {
+        if (/^regex:/i.test(rule)) {
+            try {
+                return new RegExp(rule.slice(6)).test(parts.href);
+            } catch (error) {
+                return false;
+            }
+        }
+
+        const slashIndex = rule.indexOf('/');
+        const domain = slashIndex === -1 ? normalizeDomain(rule) : normalizeDomain(rule.slice(0, slashIndex));
+        const pathPattern = slashIndex === -1 ? '' : rule.slice(slashIndex);
+        const domainMatches = parts.host === domain || parts.host.endsWith('.' + domain);
+        if (!domainMatches) {
+            return false;
+        }
+        if (!pathPattern) {
+            return true;
+        }
+        return globToRegExp(pathPattern).test(parts.path);
+    }
+
+    function getMatchingRule(rules) {
+        const parts = getUrlParts();
+        return rules.find(rule => matchRule(rule, parts)) || null;
     }
 
     function getTodayStr() {
@@ -226,9 +342,24 @@
         return normalized;
     }
 
+    function setBlockRules(rules) {
+        const normalized = normalizeRuleList(rules);
+        GM_setValue(STORAGE.blockRules, normalized);
+        GM_setValue(STORAGE.blacklist, normalized.filter(rule => !/^regex:/i.test(rule) && !rule.includes('/')).map(normalizeDomain));
+    }
+
     function isBlockedDomain(hostname) {
+        if (getMatchingRule(getAllowRules())) {
+            return false;
+        }
         const current = normalizeDomain(hostname);
-        return getBlacklist().some(site => current === site || current.endsWith('.' + site));
+        return getBlockRules().some((rule) => {
+            if (rule.includes('/') || /^regex:/i.test(rule)) {
+                return matchRule(rule, getUrlParts());
+            }
+            const site = normalizeDomain(rule);
+            return current === site || current.endsWith('.' + site);
+        });
     }
 
     function getQuotaUsageKey(dateStr, domain) {
@@ -477,11 +608,416 @@
         });
     }
 
+    function getConfigSnapshot() {
+        return {
+            version: 1,
+            exportedAt: new Date().toISOString(),
+            settings: {
+                redirectTarget: getTarget(),
+                blockRules: getBlockRules(),
+                allowRules: getAllowRules(),
+                dailyQuotaMinutes: getDailyQuotaMinutes(),
+                dailyQuotaVisits: getDailyQuotaVisits(),
+                themeMode: getThemeMode(),
+                forceMode: isForceModeEnabled()
+            },
+            stats: {
+                blockCount: GM_getValue(STORAGE.blockCount, 0),
+                blockCountBySite: GM_getValue(STORAGE.blockCountBySite, {}),
+                bypassReasonLog: getBypassReasonLog()
+            }
+        };
+    }
+
+    function applyConfigSnapshot(snapshot) {
+        if (!snapshot || typeof snapshot !== 'object') {
+            throw new Error('配置不是有效 JSON 对象');
+        }
+        const settings = snapshot.settings || snapshot;
+        if (settings.redirectTarget) {
+            const url = new URL(settings.redirectTarget);
+            GM_setValue(STORAGE.redirectTarget, url.toString());
+        }
+        if (settings.blockRules || settings.blacklist) {
+            setBlockRules(settings.blockRules || settings.blacklist);
+        }
+        if (settings.allowRules) {
+            GM_setValue(STORAGE.allowRules, normalizeRuleList(settings.allowRules));
+        }
+        if (settings.dailyQuotaMinutes !== undefined) {
+            GM_setValue(STORAGE.dailyQuotaMinutes, Math.max(0, parseInt(settings.dailyQuotaMinutes, 10) || 0));
+        }
+        if (settings.dailyQuotaVisits !== undefined) {
+            GM_setValue(STORAGE.dailyQuotaVisits, Math.max(0, parseInt(settings.dailyQuotaVisits, 10) || 0));
+        }
+        if (['auto', 'light', 'dark'].includes(settings.themeMode)) {
+            GM_setValue(STORAGE.themeMode, settings.themeMode);
+        }
+        if (settings.forceMode !== undefined) {
+            GM_setValue(STORAGE.forceMode, Boolean(settings.forceMode));
+        }
+
+        const stats = snapshot.stats;
+        if (stats && typeof stats === 'object') {
+            if (Number.isFinite(stats.blockCount)) {
+                GM_setValue(STORAGE.blockCount, stats.blockCount);
+            }
+            if (stats.blockCountBySite && typeof stats.blockCountBySite === 'object') {
+                GM_setValue(STORAGE.blockCountBySite, stats.blockCountBySite);
+            }
+            if (Array.isArray(stats.bypassReasonLog)) {
+                GM_setValue(STORAGE.bypassReasonLog, stats.bypassReasonLog.slice(-500));
+            }
+        }
+    }
+
+    function createSettingsStyles() {
+        return `
+            #${SETTINGS_ROOT_ID}, #${SETTINGS_ROOT_ID} * {
+                box-sizing: border-box;
+            }
+            #${SETTINGS_ROOT_ID} {
+                position: fixed;
+                inset: 0;
+                z-index: 2147483647;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                padding: 24px;
+                background: rgba(10, 12, 18, 0.72);
+                color: #172033;
+                font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            }
+            #${SETTINGS_ROOT_ID} .sr-settings-panel {
+                width: min(100%, 920px);
+                max-height: min(92vh, 860px);
+                overflow: auto;
+                background: #f8fafc;
+                border: 1px solid rgba(148, 163, 184, 0.45);
+                border-radius: 8px;
+                box-shadow: 0 24px 70px rgba(15, 23, 42, 0.32);
+            }
+            #${SETTINGS_ROOT_ID} .sr-settings-header {
+                position: sticky;
+                top: 0;
+                z-index: 1;
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                gap: 16px;
+                padding: 18px 20px;
+                background: #fff;
+                border-bottom: 1px solid #e2e8f0;
+            }
+            #${SETTINGS_ROOT_ID} .sr-settings-title {
+                font-size: 18px;
+                font-weight: 700;
+            }
+            #${SETTINGS_ROOT_ID} .sr-settings-subtitle {
+                color: #64748b;
+                font-size: 13px;
+                margin-top: 4px;
+            }
+            #${SETTINGS_ROOT_ID} .sr-settings-body {
+                display: grid;
+                grid-template-columns: minmax(0, 1fr) 280px;
+                gap: 18px;
+                padding: 20px;
+            }
+            #${SETTINGS_ROOT_ID} .sr-settings-grid {
+                display: grid;
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+                gap: 14px;
+            }
+            #${SETTINGS_ROOT_ID} .sr-field-full {
+                grid-column: 1 / -1;
+            }
+            #${SETTINGS_ROOT_ID} label {
+                display: block;
+                color: #334155;
+                font-size: 13px;
+                font-weight: 650;
+                margin-bottom: 7px;
+            }
+            #${SETTINGS_ROOT_ID} input,
+            #${SETTINGS_ROOT_ID} select,
+            #${SETTINGS_ROOT_ID} textarea {
+                width: 100%;
+                border: 1px solid #cbd5e1;
+                border-radius: 6px;
+                background: #fff;
+                color: #172033;
+                font: inherit;
+                font-size: 13px;
+                padding: 10px 11px;
+                outline: none;
+            }
+            #${SETTINGS_ROOT_ID} textarea {
+                min-height: 128px;
+                resize: vertical;
+                font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+                line-height: 1.45;
+            }
+            #${SETTINGS_ROOT_ID} input:focus,
+            #${SETTINGS_ROOT_ID} select:focus,
+            #${SETTINGS_ROOT_ID} textarea:focus {
+                border-color: #2563eb;
+                box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.14);
+            }
+            #${SETTINGS_ROOT_ID} .sr-help {
+                color: #64748b;
+                font-size: 12px;
+                margin-top: 6px;
+                line-height: 1.5;
+            }
+            #${SETTINGS_ROOT_ID} .sr-check-row {
+                display: flex;
+                align-items: center;
+                gap: 9px;
+                height: 40px;
+            }
+            #${SETTINGS_ROOT_ID} .sr-check-row input {
+                width: 16px;
+                height: 16px;
+                padding: 0;
+            }
+            #${SETTINGS_ROOT_ID} .sr-settings-side {
+                display: flex;
+                flex-direction: column;
+                gap: 12px;
+            }
+            #${SETTINGS_ROOT_ID} .sr-stat-box {
+                background: #fff;
+                border: 1px solid #e2e8f0;
+                border-radius: 8px;
+                padding: 14px;
+            }
+            #${SETTINGS_ROOT_ID} .sr-stat-box strong {
+                display: block;
+                font-size: 24px;
+                margin-bottom: 2px;
+            }
+            #${SETTINGS_ROOT_ID} .sr-stat-box span {
+                color: #64748b;
+                font-size: 12px;
+            }
+            #${SETTINGS_ROOT_ID} .sr-actions-row {
+                display: flex;
+                flex-wrap: wrap;
+                gap: 10px;
+                margin-top: 16px;
+            }
+            #${SETTINGS_ROOT_ID} button {
+                border: 1px solid #cbd5e1;
+                border-radius: 6px;
+                background: #fff;
+                color: #172033;
+                cursor: pointer;
+                font: inherit;
+                font-size: 13px;
+                font-weight: 650;
+                padding: 9px 13px;
+            }
+            #${SETTINGS_ROOT_ID} button:hover {
+                border-color: #94a3b8;
+                background: #f1f5f9;
+            }
+            #${SETTINGS_ROOT_ID} .sr-primary {
+                border-color: #2563eb;
+                background: #2563eb;
+                color: #fff;
+            }
+            #${SETTINGS_ROOT_ID} .sr-primary:hover {
+                border-color: #1d4ed8;
+                background: #1d4ed8;
+            }
+            #${SETTINGS_ROOT_ID} .sr-danger {
+                border-color: #fecaca;
+                color: #b91c1c;
+            }
+            #${SETTINGS_ROOT_ID} .sr-import-export {
+                min-height: 170px;
+            }
+            @media (max-width: 760px) {
+                #${SETTINGS_ROOT_ID} {
+                    padding: 10px;
+                }
+                #${SETTINGS_ROOT_ID} .sr-settings-body,
+                #${SETTINGS_ROOT_ID} .sr-settings-grid {
+                    grid-template-columns: 1fr;
+                }
+            }
+        `;
+    }
+
+    function getSettingsMarkup() {
+        const stats = getCurrentBlockStats();
+        const summary = getWeeklySummary();
+        const themeMode = getThemeMode();
+        return `
+            <div class="sr-settings-panel" role="dialog" aria-modal="true">
+                <div class="sr-settings-header">
+                    <div>
+                        <div class="sr-settings-title">Site Redirector Pro 设置</div>
+                        <div class="sr-settings-subtitle">规则按“白名单优先、再匹配拦截规则”的顺序执行</div>
+                    </div>
+                    <button type="button" id="sr-settings-close">关闭</button>
+                </div>
+                <div class="sr-settings-body">
+                    <div>
+                        <div class="sr-settings-grid">
+                            <div class="sr-field-full">
+                                <label for="sr-setting-target">重定向目标</label>
+                                <input id="sr-setting-target" value="${escapeHtml(getTarget())}" placeholder="https://claude.ai">
+                            </div>
+                            <div class="sr-field-full">
+                                <label for="sr-setting-block-rules">拦截规则</label>
+                                <textarea id="sr-setting-block-rules" spellcheck="false">${escapeHtml(getBlockRules().join('\n'))}</textarea>
+                                <div class="sr-help">每行一条：域名 example.com，路径 youtube.com/shorts*，正则 regex:^https://example\\.com/.*</div>
+                            </div>
+                            <div class="sr-field-full">
+                                <label for="sr-setting-allow-rules">白名单规则</label>
+                                <textarea id="sr-setting-allow-rules" spellcheck="false">${escapeHtml(getAllowRules().join('\n'))}</textarea>
+                                <div class="sr-help">白名单命中后直接放行，适合 messages、docs、工作区路径。</div>
+                            </div>
+                            <div>
+                                <label for="sr-setting-quota-minutes">每日可访问分钟数</label>
+                                <input id="sr-setting-quota-minutes" type="number" min="0" step="1" value="${getDailyQuotaMinutes()}">
+                            </div>
+                            <div>
+                                <label for="sr-setting-quota-visits">每日可访问次数</label>
+                                <input id="sr-setting-quota-visits" type="number" min="0" step="1" value="${getDailyQuotaVisits()}">
+                            </div>
+                            <div>
+                                <label for="sr-setting-theme">主题</label>
+                                <select id="sr-setting-theme">
+                                    <option value="auto"${themeMode === 'auto' ? ' selected' : ''}>跟随系统</option>
+                                    <option value="light"${themeMode === 'light' ? ' selected' : ''}>明亮模式</option>
+                                    <option value="dark"${themeMode === 'dark' ? ' selected' : ''}>暗黑模式</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label>强制模式</label>
+                                <div class="sr-check-row">
+                                    <input id="sr-setting-force" type="checkbox"${isForceModeEnabled() ? ' checked' : ''}>
+                                    <span>禁用继续摸鱼</span>
+                                </div>
+                            </div>
+                            <div class="sr-field-full">
+                                <label for="sr-setting-import-export">导入 / 导出 JSON</label>
+                                <textarea id="sr-setting-import-export" class="sr-import-export" spellcheck="false" placeholder="点击导出生成 JSON，或粘贴 JSON 后点击导入"></textarea>
+                            </div>
+                        </div>
+                        <div class="sr-actions-row">
+                            <button type="button" class="sr-primary" id="sr-settings-save">保存设置</button>
+                            <button type="button" id="sr-settings-export">导出配置</button>
+                            <button type="button" id="sr-settings-import">导入配置</button>
+                            <button type="button" class="sr-danger" id="sr-settings-reset-stats">重置统计</button>
+                        </div>
+                    </div>
+                    <div class="sr-settings-side">
+                        <div class="sr-stat-box"><strong>${stats.todayCount}</strong><span>今日拦截</span></div>
+                        <div class="sr-stat-box"><strong>${stats.totalCount}</strong><span>累计拦截</span></div>
+                        <div class="sr-stat-box"><strong>${summary.weeklyBlocks}</strong><span>近 7 天拦截</span></div>
+                        <div class="sr-stat-box"><strong>${summary.streakDays}</strong><span>连续专注天数</span></div>
+                    </div>
+                </div>
+            </div>
+        `;
+    }
+
+    function mountSettingsPanel() {
+        if (!document.documentElement) {
+            window.setTimeout(mountSettingsPanel, 50);
+            return;
+        }
+
+        let style = document.getElementById(SETTINGS_STYLE_ID);
+        if (!style) {
+            style = document.createElement('style');
+            style.id = SETTINGS_STYLE_ID;
+            style.textContent = createSettingsStyles();
+            (document.head || document.documentElement).appendChild(style);
+        }
+
+        let root = document.getElementById(SETTINGS_ROOT_ID);
+        if (!root) {
+            root = document.createElement('div');
+            root.id = SETTINGS_ROOT_ID;
+            document.documentElement.appendChild(root);
+        }
+        root.innerHTML = getSettingsMarkup();
+        wireSettingsPanel(root);
+    }
+
+    function wireSettingsPanel(root) {
+        const close = () => root.remove();
+        root.querySelector('#sr-settings-close').addEventListener('click', close);
+        root.addEventListener('click', (event) => {
+            if (event.target === root) {
+                close();
+            }
+        });
+
+        root.querySelector('#sr-settings-save').addEventListener('click', () => {
+            const target = root.querySelector('#sr-setting-target').value.trim();
+            try {
+                const url = new URL(target);
+                GM_setValue(STORAGE.redirectTarget, url.toString());
+            } catch (error) {
+                alert('重定向目标不是有效 URL');
+                return;
+            }
+            setBlockRules(splitListInput(root.querySelector('#sr-setting-block-rules').value));
+            GM_setValue(STORAGE.allowRules, normalizeRuleList(root.querySelector('#sr-setting-allow-rules').value));
+            GM_setValue(STORAGE.dailyQuotaMinutes, Math.max(0, parseInt(root.querySelector('#sr-setting-quota-minutes').value, 10) || 0));
+            GM_setValue(STORAGE.dailyQuotaVisits, Math.max(0, parseInt(root.querySelector('#sr-setting-quota-visits').value, 10) || 0));
+            GM_setValue(STORAGE.themeMode, root.querySelector('#sr-setting-theme').value);
+            GM_setValue(STORAGE.forceMode, root.querySelector('#sr-setting-force').checked);
+            alert('设置已保存，刷新页面后对当前页完全生效');
+        });
+
+        root.querySelector('#sr-settings-export').addEventListener('click', () => {
+            root.querySelector('#sr-setting-import-export').value = JSON.stringify(getConfigSnapshot(), null, 2);
+        });
+
+        root.querySelector('#sr-settings-import').addEventListener('click', () => {
+            const raw = root.querySelector('#sr-setting-import-export').value.trim();
+            if (!raw) {
+                alert('先粘贴要导入的 JSON');
+                return;
+            }
+            try {
+                applyConfigSnapshot(JSON.parse(raw));
+                root.innerHTML = getSettingsMarkup();
+                wireSettingsPanel(root);
+                alert('配置已导入');
+            } catch (error) {
+                alert(`导入失败：${error.message}`);
+            }
+        });
+
+        root.querySelector('#sr-settings-reset-stats').addEventListener('click', () => {
+            if (!confirm('确定要重置累计统计和摸鱼原因记录吗？')) {
+                return;
+            }
+            GM_setValue(STORAGE.blockCount, 0);
+            GM_setValue(STORAGE.blockCountBySite, {});
+            GM_setValue(STORAGE.bypassReasonLog, []);
+            root.innerHTML = getSettingsMarkup();
+            wireSettingsPanel(root);
+        });
+    }
+
     function registerMenuCommands() {
         if (runtimeState.menuRegistered) {
             return;
         }
         runtimeState.menuRegistered = true;
+
+        GM_registerMenuCommand('⚙️ 打开设置面板', () => {
+            mountSettingsPanel();
+        });
 
         GM_registerMenuCommand('🎯 设置重定向目标', () => {
             const current = getTarget();
@@ -499,63 +1035,63 @@
         });
 
         GM_registerMenuCommand('📋 查看黑名单', () => {
-            const blacklist = getBlacklist();
-            alert(`当前黑名单（${blacklist.length} 个网站）：\n\n${blacklist.join('\n')}`);
+            const rules = getBlockRules();
+            alert(`当前拦截规则（${rules.length} 条）：\n\n${rules.join('\n')}`);
         });
 
         GM_registerMenuCommand('➕ 添加网站到黑名单', () => {
-            const input = prompt('请输入要拦截的域名（如 example.com）：', '');
+            const input = prompt('请输入要拦截的规则（如 example.com、youtube.com/shorts* 或 regex:...）：', '');
             if (!input || !input.trim()) {
                 return;
             }
-            const domain = normalizeDomain(input);
-            const blacklist = getBlacklist();
-            if (blacklist.includes(domain)) {
-                alert(`${domain} 已在黑名单中`);
+            const rule = normalizeRule(input);
+            const rules = getBlockRules();
+            if (rules.includes(rule)) {
+                alert(`${rule} 已在拦截规则中`);
                 return;
             }
-            blacklist.push(domain);
-            GM_setValue(STORAGE.blacklist, blacklist);
-            alert(`已添加 ${domain} 到黑名单`);
+            setBlockRules(rules.concat(rule));
+            alert(`已添加 ${rule} 到拦截规则`);
         });
 
         GM_registerMenuCommand('➖ 从黑名单移除网站', () => {
-            const blacklist = getBlacklist();
-            if (blacklist.length === 0) {
-                alert('黑名单为空');
+            const rules = getBlockRules();
+            if (rules.length === 0) {
+                alert('拦截规则为空');
                 return;
             }
-            const input = prompt(`当前黑名单：\n${blacklist.join('\n')}\n\n请输入要移除的域名：`, '');
+            const input = prompt(`当前拦截规则：\n${rules.join('\n')}\n\n请输入要移除的规则：`, '');
             if (!input || !input.trim()) {
                 return;
             }
-            const domain = normalizeDomain(input);
-            const next = blacklist.filter(site => site !== domain);
-            if (next.length === blacklist.length) {
-                alert(`${domain} 不在黑名单中`);
+            const rule = normalizeRule(input);
+            const next = rules.filter(site => site !== rule);
+            if (next.length === rules.length) {
+                alert(`${rule} 不在拦截规则中`);
                 return;
             }
-            GM_setValue(STORAGE.blacklist, next);
-            alert(`已从黑名单移除 ${domain}`);
+            setBlockRules(next);
+            alert(`已从拦截规则移除 ${rule}`);
         });
 
         GM_registerMenuCommand('✏️ 编辑完整黑名单', () => {
-            const blacklist = getBlacklist();
-            const input = prompt('编辑黑名单（每行一个域名，用换行或逗号分隔）：', blacklist.join(', '));
+            const rules = getBlockRules();
+            const input = prompt('编辑拦截规则（每行一条，支持域名、路径通配、regex:）：', rules.join('\n'));
             if (input === null) {
                 return;
             }
-            const next = input.split(/[,\n，；;]+/).map(normalizeDomain).filter(Boolean);
-            GM_setValue(STORAGE.blacklist, next);
-            alert(`黑名单已更新，共 ${next.length} 个网站`);
+            const next = normalizeRuleList(input);
+            setBlockRules(next);
+            alert(`拦截规则已更新，共 ${next.length} 条`);
         });
 
         GM_registerMenuCommand('🔙 重置为默认黑名单', () => {
             if (!confirm(`确定要重置黑名单为默认设置吗？\n\n默认黑名单：\n${DEFAULTS.blacklist.join('\n')}`)) {
                 return;
             }
-            GM_setValue(STORAGE.blacklist, DEFAULTS.blacklist.slice());
-            alert('黑名单已重置为默认设置');
+            setBlockRules(DEFAULTS.blacklist.slice());
+            GM_setValue(STORAGE.allowRules, []);
+            alert('拦截规则已重置为默认设置');
         });
 
         GM_registerMenuCommand('⏱️ 设置每日配额', () => {
@@ -589,7 +1125,7 @@
             const quotaMinutes = getDailyQuotaMinutes();
             const quotaVisits = getDailyQuotaVisits();
             const quotaText = quotaMinutes || quotaVisits ? `${quotaMinutes} 分钟 / ${quotaVisits} 次` : '未启用';
-            alert(`今日拦截次数：${todayTotal}\n累计拦截次数：${total}\n当前重定向目标：${getTarget()}\n黑名单网站数：${getBlacklist().length}\n每日配额：${quotaText}\n当前主题：${themeLabel}`);
+            alert(`今日拦截次数：${todayTotal}\n累计拦截次数：${total}\n当前重定向目标：${getTarget()}\n拦截规则数：${getBlockRules().length}\n白名单规则数：${getAllowRules().length}\n每日配额：${quotaText}\n当前主题：${themeLabel}`);
         });
 
         GM_registerMenuCommand('📈 查看本周趋势', () => {
