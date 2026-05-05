@@ -31,6 +31,7 @@
         blockCountBySite: 'blockCountBySite',
         dailyQuotaMinutes: 'dailyQuotaMinutes',
         dailyQuotaVisits: 'dailyQuotaVisits',
+        siteQuotaMinutes: 'siteQuotaMinutes',
         themeMode: 'themeMode',
         debugMode: 'debugMode',
         forceMode: 'forceMode',
@@ -263,8 +264,15 @@
         return rules.find(rule => matchRule(rule, parts)) || null;
     }
 
+    function getLocalDateStr(date) {
+        const year = date.getFullYear();
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const day = String(date.getDate()).padStart(2, '0');
+        return `${year}-${month}-${day}`;
+    }
+
     function getTodayStr() {
-        return new Date().toISOString().slice(0, 10);
+        return getLocalDateStr(new Date());
     }
 
     function pickRandom(items) {
@@ -332,6 +340,73 @@
         return GM_getValue(STORAGE.dailyQuotaVisits, 0);
     }
 
+    function getSiteQuotaMinutesMap() {
+        const stored = GM_getValue(STORAGE.siteQuotaMinutes, {});
+        if (!stored || typeof stored !== 'object' || Array.isArray(stored)) {
+            return {};
+        }
+        const normalized = {};
+        Object.entries(stored).forEach(([site, minutes]) => {
+            const domain = normalizeDomain(site);
+            const value = Math.max(0, parseInt(minutes, 10) || 0);
+            if (domain) {
+                normalized[domain] = value;
+            }
+        });
+        if (JSON.stringify(normalized) !== JSON.stringify(stored)) {
+            GM_setValue(STORAGE.siteQuotaMinutes, normalized);
+        }
+        return normalized;
+    }
+
+    function setSiteQuotaMinutesMap(map) {
+        const normalized = {};
+        Object.entries(map || {}).forEach(([site, minutes]) => {
+            const domain = normalizeDomain(site);
+            const value = Math.max(0, parseInt(minutes, 10) || 0);
+            if (domain) {
+                normalized[domain] = value;
+            }
+        });
+        GM_setValue(STORAGE.siteQuotaMinutes, normalized);
+    }
+
+    function parseSiteQuotaInput(value) {
+        const map = {};
+        String(value || '').split(/\n+/).forEach((line) => {
+            const trimmed = line.trim();
+            if (!trimmed) {
+                return;
+            }
+            const match = trimmed.match(/^(.+?)(?:\s*[,，:：=]\s*|\s+)(\d+)$/);
+            if (!match) {
+                throw new Error(`站点配额格式无效：${trimmed}`);
+            }
+            const domain = normalizeDomain(match[1]);
+            if (!domain) {
+                throw new Error(`站点域名无效：${trimmed}`);
+            }
+            map[domain] = Math.max(0, parseInt(match[2], 10) || 0);
+        });
+        return map;
+    }
+
+    function formatSiteQuotaInput(map) {
+        return Object.entries(map || {})
+            .sort(([a], [b]) => a.localeCompare(b))
+            .map(([site, minutes]) => `${site} ${minutes}`)
+            .join('\n');
+    }
+
+    function getQuotaLimitMinutes(domain) {
+        const normalized = normalizeDomain(domain);
+        const siteQuotas = getSiteQuotaMinutesMap();
+        if (Object.prototype.hasOwnProperty.call(siteQuotas, normalized)) {
+            return siteQuotas[normalized];
+        }
+        return getDailyQuotaMinutes();
+    }
+
     function getBlacklist() {
         const stored = GM_getValue(STORAGE.blacklist, DEFAULTS.blacklist);
         const list = Array.isArray(stored) ? stored : String(stored).split(/[,\n，；;]+/);
@@ -362,28 +437,61 @@
         });
     }
 
+    function getQuotaDomain(hostname) {
+        const rule = getMatchingRule(getBlockRules());
+        if (rule && !/^regex:/i.test(rule)) {
+            const slashIndex = rule.indexOf('/');
+            return normalizeDomain(slashIndex === -1 ? rule : rule.slice(0, slashIndex));
+        }
+        return normalizeDomain(hostname);
+    }
+
     function getQuotaUsageKey(dateStr, domain) {
         return `quotaUsage_${dateStr}_${domain}`;
+    }
+
+    function getQuotaUsageMsKey(dateStr, domain) {
+        return `quotaUsageMs_${dateStr}_${domain}`;
     }
 
     function getQuotaVisitKey(dateStr, domain) {
         return `quotaVisits_${dateStr}_${domain}`;
     }
 
-    function isQuotaEnabled() {
-        return getDailyQuotaMinutes() > 0 || getDailyQuotaVisits() > 0;
+    function getQuotaUsageMs(dateStr, domain) {
+        const msKey = getQuotaUsageMsKey(dateStr, domain);
+        const storedMs = GM_getValue(msKey, null);
+        if (Number.isFinite(storedMs)) {
+            return storedMs;
+        }
+        return (GM_getValue(getQuotaUsageKey(dateStr, domain), 0) || 0) * 60 * 1000;
+    }
+
+    function addQuotaUsageMs(dateStr, domain, elapsedMs) {
+        if (elapsedMs <= 0) {
+            return getQuotaUsageMs(dateStr, domain);
+        }
+        const msKey = getQuotaUsageMsKey(dateStr, domain);
+        const nextMs = getQuotaUsageMs(dateStr, domain) + elapsedMs;
+        GM_setValue(msKey, nextMs);
+        GM_setValue(getQuotaUsageKey(dateStr, domain), Math.floor(nextMs / 60000));
+        return nextMs;
+    }
+
+    function isQuotaEnabled(domain) {
+        return getQuotaLimitMinutes(domain) > 0 || getDailyQuotaVisits() > 0;
     }
 
     function canAccessWithinQuota(domain) {
-        if (!isQuotaEnabled()) {
+        if (!isQuotaEnabled(domain)) {
             return false;
         }
         const today = getTodayStr();
-        const usedMinutes = GM_getValue(getQuotaUsageKey(today, domain), 0);
+        const usedMs = getQuotaUsageMs(today, domain);
         const usedVisits = GM_getValue(getQuotaVisitKey(today, domain), 0);
-        const minutesLimit = getDailyQuotaMinutes();
+        const minutesLimit = getQuotaLimitMinutes(domain);
         const visitsLimit = getDailyQuotaVisits();
-        const minutesOk = minutesLimit === 0 || usedMinutes < minutesLimit;
+        const minutesOk = minutesLimit === 0 || usedMs < minutesLimit * 60 * 1000;
         const visitsOk = visitsLimit === 0 || usedVisits < visitsLimit;
         return minutesOk && visitsOk;
     }
@@ -393,14 +501,51 @@
         const visitKey = getQuotaVisitKey(today, domain);
         GM_setValue(visitKey, GM_getValue(visitKey, 0) + 1);
 
+        const limitMinutes = getQuotaLimitMinutes(domain);
+        if (limitMinutes <= 0) {
+            return;
+        }
+
+        let lastTick = document.visibilityState === 'visible' ? Date.now() : null;
         const timer = window.setInterval(() => {
-            const usageKey = getQuotaUsageKey(today, domain);
-            GM_setValue(usageKey, GM_getValue(usageKey, 0) + 1);
-        }, 60 * 1000);
+            if (document.visibilityState !== 'visible') {
+                lastTick = null;
+                return;
+            }
+            const now = Date.now();
+            if (lastTick === null) {
+                lastTick = now;
+                return;
+            }
+            const usedMs = addQuotaUsageMs(today, domain, now - lastTick);
+            lastTick = now;
+            if (usedMs >= limitMinutes * 60 * 1000) {
+                clearInterval(timer);
+                evaluateBlocking('quota-expired');
+            }
+        }, 1000);
+
+        document.addEventListener('visibilitychange', () => {
+            lastTick = document.visibilityState === 'visible' ? Date.now() : null;
+        });
 
         window.addEventListener('beforeunload', () => {
+            if (lastTick !== null && document.visibilityState === 'visible') {
+                addQuotaUsageMs(today, domain, Date.now() - lastTick);
+            }
             clearInterval(timer);
         }, { once: true });
+    }
+
+    function getQuotaStatusText(domain) {
+        const limitMinutes = getQuotaLimitMinutes(domain);
+        if (limitMinutes <= 0) {
+            return '未开放';
+        }
+        const usedMs = getQuotaUsageMs(getTodayStr(), domain);
+        const usedMinutes = Math.floor(usedMs / 60000);
+        const remainingMinutes = Math.max(0, Math.ceil((limitMinutes * 60000 - usedMs) / 60000));
+        return `${usedMinutes}/${limitMinutes} 分钟，剩 ${remainingMinutes}`;
     }
 
     function getBypassKey(hostname) {
@@ -467,7 +612,7 @@
     function getPastDateStr(offsetDays) {
         const date = new Date();
         date.setDate(date.getDate() - offsetDays);
-        return date.toISOString().slice(0, 10);
+        return getLocalDateStr(date);
     }
 
     function getRecentBypassReasons(days) {
@@ -618,6 +763,7 @@
                 allowRules: getAllowRules(),
                 dailyQuotaMinutes: getDailyQuotaMinutes(),
                 dailyQuotaVisits: getDailyQuotaVisits(),
+                siteQuotaMinutes: getSiteQuotaMinutesMap(),
                 themeMode: getThemeMode(),
                 forceMode: isForceModeEnabled()
             },
@@ -649,6 +795,9 @@
         }
         if (settings.dailyQuotaVisits !== undefined) {
             GM_setValue(STORAGE.dailyQuotaVisits, Math.max(0, parseInt(settings.dailyQuotaVisits, 10) || 0));
+        }
+        if (settings.siteQuotaMinutes !== undefined) {
+            setSiteQuotaMinutesMap(settings.siteQuotaMinutes);
         }
         if (['auto', 'light', 'dark'].includes(settings.themeMode)) {
             GM_setValue(STORAGE.themeMode, settings.themeMode);
@@ -969,6 +1118,7 @@
         const blockRules = getBlockRules();
         const allowRules = getAllowRules();
         const forceLabel = isForceModeEnabled() ? '强制模式' : '冷静模式';
+        const siteQuotaText = formatSiteQuotaInput(getSiteQuotaMinutesMap());
         return `
             <div class="sr-settings-panel" role="dialog" aria-modal="true">
                 <div class="sr-console-nav">
@@ -1043,16 +1193,23 @@
                             <div class="sr-section">
                                 <div class="sr-section-title">
                                     <h3>配额策略</h3>
-                                    <span>0 表示禁用</span>
+                                    <span>默认配额 + 单站点覆盖</span>
                                 </div>
                                 <div class="sr-settings-grid">
                                     <div>
-                                        <label for="sr-setting-quota-minutes">每日可访问分钟数</label>
+                                        <label for="sr-setting-quota-minutes">默认每日可访问分钟数</label>
                                         <input id="sr-setting-quota-minutes" type="number" min="0" step="1" value="${getDailyQuotaMinutes()}">
+                                        <div class="sr-help">没有单独配置的黑名单站点使用这个默认值，0 表示直接拦截。</div>
                                     </div>
                                     <div>
                                         <label for="sr-setting-quota-visits">每日可访问次数</label>
                                         <input id="sr-setting-quota-visits" type="number" min="0" step="1" value="${getDailyQuotaVisits()}">
+                                        <div class="sr-help">访问次数仍是全局限制，0 表示不限制次数。</div>
+                                    </div>
+                                    <div class="sr-field-full">
+                                        <label for="sr-setting-site-quotas">单站点每日分钟数</label>
+                                        <textarea id="sr-setting-site-quotas" spellcheck="false" placeholder="bilibili.com 20&#10;douyin.com 10">${escapeHtml(siteQuotaText)}</textarea>
+                                        <div class="sr-help">每行一个域名和分钟数，支持空格、冒号或逗号分隔；子域名命中域名规则时共享该站点配额。</div>
                                     </div>
                                 </div>
                             </div>
@@ -1131,6 +1288,12 @@
             GM_setValue(STORAGE.allowRules, normalizeRuleList(root.querySelector('#sr-setting-allow-rules').value));
             GM_setValue(STORAGE.dailyQuotaMinutes, Math.max(0, parseInt(root.querySelector('#sr-setting-quota-minutes').value, 10) || 0));
             GM_setValue(STORAGE.dailyQuotaVisits, Math.max(0, parseInt(root.querySelector('#sr-setting-quota-visits').value, 10) || 0));
+            try {
+                setSiteQuotaMinutesMap(parseSiteQuotaInput(root.querySelector('#sr-setting-site-quotas').value));
+            } catch (error) {
+                alert(error.message);
+                return;
+            }
             GM_setValue(STORAGE.themeMode, root.querySelector('#sr-setting-theme').value);
             GM_setValue(STORAGE.forceMode, root.querySelector('#sr-setting-force').checked);
             alert('设置已保存，刷新页面后对当前页完全生效');
@@ -1254,7 +1417,7 @@
         });
 
         GM_registerMenuCommand('⏱️ 设置每日配额', () => {
-            const minutesInput = prompt('请输入每日可访问分钟数（0 表示禁用）：', getDailyQuotaMinutes());
+            const minutesInput = prompt('请输入默认每日可访问分钟数（0 表示直接拦截）：', getDailyQuotaMinutes());
             if (minutesInput === null) {
                 return;
             }
@@ -1262,11 +1425,23 @@
             if (visitsInput === null) {
                 return;
             }
+            const siteQuotaInput = prompt('设置单站点每日分钟数，每行：域名 分钟数\n留空表示不设置单站点覆盖。', formatSiteQuotaInput(getSiteQuotaMinutesMap()));
+            if (siteQuotaInput === null) {
+                return;
+            }
             const minutesValue = Math.max(0, parseInt(minutesInput, 10) || 0);
             const visitsValue = Math.max(0, parseInt(visitsInput, 10) || 0);
+            let siteQuotas = {};
+            try {
+                siteQuotas = parseSiteQuotaInput(siteQuotaInput);
+            } catch (error) {
+                alert(error.message);
+                return;
+            }
             GM_setValue(STORAGE.dailyQuotaMinutes, minutesValue);
             GM_setValue(STORAGE.dailyQuotaVisits, visitsValue);
-            alert(`每日配额已更新：分钟数 ${minutesValue} / 次数 ${visitsValue}`);
+            setSiteQuotaMinutesMap(siteQuotas);
+            alert(`每日配额已更新：默认 ${minutesValue} 分钟 / ${visitsValue} 次，单站点 ${Object.keys(siteQuotas).length} 条`);
         });
 
         GM_registerMenuCommand('🔄 重置拦截计数', () => {
@@ -1283,7 +1458,8 @@
             const themeLabel = { auto: '跟随系统', light: '明亮模式', dark: '暗黑模式' }[themeMode];
             const quotaMinutes = getDailyQuotaMinutes();
             const quotaVisits = getDailyQuotaVisits();
-            const quotaText = quotaMinutes || quotaVisits ? `${quotaMinutes} 分钟 / ${quotaVisits} 次` : '未启用';
+            const siteQuotaCount = Object.keys(getSiteQuotaMinutesMap()).length;
+            const quotaText = quotaMinutes || quotaVisits || siteQuotaCount ? `默认 ${quotaMinutes} 分钟 / ${quotaVisits} 次，单站点 ${siteQuotaCount} 条` : '未启用';
             alert(`今日拦截次数：${todayTotal}\n累计拦截次数：${total}\n当前重定向目标：${getTarget()}\n拦截规则数：${getBlockRules().length}\n白名单规则数：${getAllowRules().length}\n每日配额：${quotaText}\n当前主题：${themeLabel}`);
         });
 
@@ -1291,9 +1467,7 @@
             const days = [];
             const hourlyTotals = Array(24).fill(0);
             for (let i = 6; i >= 0; i--) {
-                const date = new Date();
-                date.setDate(date.getDate() - i);
-                const dateStr = date.toISOString().slice(0, 10);
+                const dateStr = getPastDateStr(i);
                 const dayCount = GM_getValue('blockCount_' + dateStr, 0);
                 days.push(`${dateStr}: ${dayCount}`);
                 const hourCounts = GM_getValue('blockHours_' + dateStr, []);
@@ -1682,7 +1856,7 @@
         `;
     }
 
-    function createMarkup(hostname, stats, session) {
+    function createMarkup(hostname, stats, session, quotaDomain) {
         const streakDays = getFocusStreakDays();
         const summary = getWeeklySummary();
         const topSite = summary.topSites[0] ? summary.topSites[0][0] : '暂无';
@@ -1747,6 +1921,7 @@
                     <div class="sr-panel">
                         <div class="sr-panel-title">当前判断</div>
                         <div class="sr-line"><span>成就</span><strong>${getAchievementText(stats, streakDays)}</strong></div>
+                        <div class="sr-line"><span>今日配额</span><strong>${getQuotaStatusText(quotaDomain)}</strong></div>
                         <div class="sr-line"><span>本周高频站点</span><strong>${topSite}</strong></div>
                         <div class="sr-line"><span>高峰时段</span><strong>${summary.topHour}:00</strong></div>
                     </div>
@@ -1775,7 +1950,7 @@
         return root;
     }
 
-    function mountBlockPage(stats, session) {
+    function mountBlockPage(stats, session, quotaDomain) {
         const theme = getTheme();
 
         function mount() {
@@ -1790,7 +1965,7 @@
             }
 
             const root = getOrCreateRoot();
-            root.innerHTML = createMarkup(location.hostname, stats, session);
+            root.innerHTML = createMarkup(location.hostname, stats, session, quotaDomain);
             if (root.parentNode !== document.documentElement) {
                 document.documentElement.appendChild(root);
             }
@@ -1998,14 +2173,15 @@
             return;
         }
 
-        if (canAccessWithinQuota(normalizedDomain)) {
+        const quotaDomain = getQuotaDomain(location.hostname);
+        if (canAccessWithinQuota(quotaDomain)) {
             if (!runtimeState.quotaSessionStarted) {
                 runtimeState.quotaSessionStarted = true;
                 logDebug('within quota, allow access', {
-                    domain: normalizedDomain,
+                    domain: quotaDomain,
                     trigger
                 });
-                startQuotaSession(normalizedDomain);
+                startQuotaSession(quotaDomain);
             }
             return;
         }
@@ -2027,7 +2203,7 @@
             trigger,
             reusedSession: Boolean(existingSession)
         });
-        mountBlockPage(stats, session);
+        mountBlockPage(stats, session, quotaDomain);
         return true;
     }
 
