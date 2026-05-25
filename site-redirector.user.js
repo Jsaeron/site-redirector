@@ -2,7 +2,7 @@
 // @name         Site Redirector Pro
 // @name:zh-CN   网站重定向助手
 // @namespace    https://github.com/Jsaeron/site-redirector
-// @version      1.8.0
+// @version      1.9.0
 // @description  Block distracting websites with a cooldown timer and redirect to productive sites
 // @description:zh-CN  拦截分心网站，冷静倒计时后重定向到指定网站，帮助你保持专注
 // @author       Daniel
@@ -32,6 +32,9 @@
         dailyQuotaMinutes: 'dailyQuotaMinutes',
         dailyQuotaVisits: 'dailyQuotaVisits',
         siteQuotaMinutes: 'siteQuotaMinutes',
+        activeScheduleEnabled: 'activeScheduleEnabled',
+        activeScheduleStart: 'activeScheduleStart',
+        activeScheduleEnd: 'activeScheduleEnd',
         themeMode: 'themeMode',
         debugMode: 'debugMode',
         forceMode: 'forceMode',
@@ -42,7 +45,9 @@
         target: 'https://claude.ai',
         blacklist: ['bilibili.com', 'douyin.com', 'weibo.com', 'x.com'],
         cooldown: 30,
-        bypassMs: 5 * 60 * 1000
+        bypassMs: 5 * 60 * 1000,
+        activeScheduleStart: '21:00',
+        activeScheduleEnd: '00:00'
     };
 
     const THEMES = {
@@ -132,7 +137,9 @@
         menuRegistered: false,
         blockPageRequested: false,
         quotaSessionStarted: false,
-        startupChecksInstalled: false
+        startupChecksInstalled: false,
+        scheduleTimer: null,
+        releasingBlockPage: false
     };
 
     function logDebug() {
@@ -340,6 +347,66 @@
         return GM_getValue(STORAGE.dailyQuotaVisits, 0);
     }
 
+    function isValidTimeValue(value) {
+        return /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(String(value || ''));
+    }
+
+    function getActiveSchedule() {
+        const storedStart = GM_getValue(STORAGE.activeScheduleStart, DEFAULTS.activeScheduleStart);
+        const storedEnd = GM_getValue(STORAGE.activeScheduleEnd, DEFAULTS.activeScheduleEnd);
+        return {
+            enabled: GM_getValue(STORAGE.activeScheduleEnabled, false) === true,
+            start: isValidTimeValue(storedStart) ? storedStart : DEFAULTS.activeScheduleStart,
+            end: isValidTimeValue(storedEnd) ? storedEnd : DEFAULTS.activeScheduleEnd
+        };
+    }
+
+    function getTimeMinutes(value) {
+        const [hours, minutes] = value.split(':').map(Number);
+        return hours * 60 + minutes;
+    }
+
+    function isWithinActiveSchedule(date) {
+        const schedule = getActiveSchedule();
+        if (!schedule.enabled) {
+            return true;
+        }
+        const start = getTimeMinutes(schedule.start);
+        const end = getTimeMinutes(schedule.end);
+        if (start === end) {
+            return true;
+        }
+        const current = date || new Date();
+        const currentMinutes = current.getHours() * 60 + current.getMinutes();
+        return start < end ? currentMinutes >= start && currentMinutes < end : currentMinutes >= start || currentMinutes < end;
+    }
+
+    function getActiveScheduleText() {
+        const schedule = getActiveSchedule();
+        if (!schedule.enabled || schedule.start === schedule.end) {
+            return '全天生效';
+        }
+        return `${schedule.start} - ${schedule.end}${getTimeMinutes(schedule.start) > getTimeMinutes(schedule.end) ? '（跨天）' : ''}`;
+    }
+
+    function getNextScheduleBoundaryDelay(date) {
+        const schedule = getActiveSchedule();
+        if (!schedule.enabled || schedule.start === schedule.end) {
+            return null;
+        }
+        const now = date || new Date();
+        const boundaries = [schedule.start, schedule.end].map((value) => {
+            const candidate = new Date(now);
+            const minutes = getTimeMinutes(value);
+            candidate.setHours(Math.floor(minutes / 60), minutes % 60, 0, 0);
+            if (candidate.getTime() <= now.getTime()) {
+                candidate.setDate(candidate.getDate() + 1);
+            }
+            return candidate.getTime();
+        });
+        return Math.min(...boundaries) - now.getTime();
+    }
+
     function getSiteQuotaMinutesMap() {
         const stored = GM_getValue(STORAGE.siteQuotaMinutes, {});
         if (!stored || typeof stored !== 'object' || Array.isArray(stored)) {
@@ -507,7 +574,15 @@
         }
 
         let lastTick = document.visibilityState === 'visible' ? Date.now() : null;
+        let sessionActive = true;
         const timer = window.setInterval(() => {
+            if (!isWithinActiveSchedule()) {
+                sessionActive = false;
+                lastTick = null;
+                clearInterval(timer);
+                runtimeState.quotaSessionStarted = false;
+                return;
+            }
             if (document.visibilityState !== 'visible') {
                 lastTick = null;
                 return;
@@ -520,19 +595,25 @@
             const usedMs = addQuotaUsageMs(today, domain, now - lastTick);
             lastTick = now;
             if (usedMs >= limitMinutes * 60 * 1000) {
+                sessionActive = false;
+                lastTick = null;
                 clearInterval(timer);
                 evaluateBlocking('quota-expired');
             }
         }, 1000);
 
         document.addEventListener('visibilitychange', () => {
-            lastTick = document.visibilityState === 'visible' ? Date.now() : null;
+            if (!sessionActive) {
+                return;
+            }
+            lastTick = document.visibilityState === 'visible' && isWithinActiveSchedule() ? Date.now() : null;
         });
 
         window.addEventListener('beforeunload', () => {
-            if (lastTick !== null && document.visibilityState === 'visible') {
+            if (sessionActive && lastTick !== null && document.visibilityState === 'visible') {
                 addQuotaUsageMs(today, domain, Date.now() - lastTick);
             }
+            sessionActive = false;
             clearInterval(timer);
         }, { once: true });
     }
@@ -764,6 +845,9 @@
                 dailyQuotaMinutes: getDailyQuotaMinutes(),
                 dailyQuotaVisits: getDailyQuotaVisits(),
                 siteQuotaMinutes: getSiteQuotaMinutesMap(),
+                activeScheduleEnabled: getActiveSchedule().enabled,
+                activeScheduleStart: getActiveSchedule().start,
+                activeScheduleEnd: getActiveSchedule().end,
                 themeMode: getThemeMode(),
                 forceMode: isForceModeEnabled()
             },
@@ -780,6 +864,15 @@
             throw new Error('配置不是有效 JSON 对象');
         }
         const settings = snapshot.settings || snapshot;
+        if (settings.activeScheduleEnabled !== undefined && typeof settings.activeScheduleEnabled !== 'boolean') {
+            throw new Error('生效时间开关必须是布尔值');
+        }
+        if (settings.activeScheduleStart !== undefined && !isValidTimeValue(settings.activeScheduleStart)) {
+            throw new Error('生效开始时间格式无效');
+        }
+        if (settings.activeScheduleEnd !== undefined && !isValidTimeValue(settings.activeScheduleEnd)) {
+            throw new Error('生效结束时间格式无效');
+        }
         if (settings.redirectTarget) {
             const url = new URL(settings.redirectTarget);
             GM_setValue(STORAGE.redirectTarget, url.toString());
@@ -798,6 +891,15 @@
         }
         if (settings.siteQuotaMinutes !== undefined) {
             setSiteQuotaMinutesMap(settings.siteQuotaMinutes);
+        }
+        if (settings.activeScheduleEnabled !== undefined) {
+            GM_setValue(STORAGE.activeScheduleEnabled, settings.activeScheduleEnabled);
+        }
+        if (isValidTimeValue(settings.activeScheduleStart)) {
+            GM_setValue(STORAGE.activeScheduleStart, settings.activeScheduleStart);
+        }
+        if (isValidTimeValue(settings.activeScheduleEnd)) {
+            GM_setValue(STORAGE.activeScheduleEnd, settings.activeScheduleEnd);
         }
         if (['auto', 'light', 'dark'].includes(settings.themeMode)) {
             GM_setValue(STORAGE.themeMode, settings.themeMode);
@@ -1117,6 +1219,7 @@
         const themeMode = getThemeMode();
         const blockRules = getBlockRules();
         const allowRules = getAllowRules();
+        const activeSchedule = getActiveSchedule();
         const forceLabel = isForceModeEnabled() ? '强制模式' : '冷静模式';
         const siteQuotaText = formatSiteQuotaInput(getSiteQuotaMinutesMap());
         return `
@@ -1139,6 +1242,7 @@
                             <span class="sr-status-pill">${forceLabel}</span>
                             <span class="sr-status-pill">${blockRules.length} 条拦截规则</span>
                             <span class="sr-status-pill">${allowRules.length} 条白名单</span>
+                            <span class="sr-status-pill">${escapeHtml(getActiveScheduleText())}</span>
                             <span class="sr-status-pill">今日 ${stats.todayCount} 次</span>
                         </div>
                         <button type="button" id="sr-settings-close">关闭</button>
@@ -1192,10 +1296,26 @@
                             </div>
                             <div class="sr-section">
                                 <div class="sr-section-title">
-                                    <h3>配额策略</h3>
-                                    <span>默认配额 + 单站点覆盖</span>
+                                    <h3>生效策略</h3>
+                                    <span>时间段 + 访问配额</span>
                                 </div>
                                 <div class="sr-settings-grid">
+                                    <div class="sr-field-full">
+                                        <label>选择时间段生效</label>
+                                        <div class="sr-check-row">
+                                            <input id="sr-setting-schedule-enabled" type="checkbox"${activeSchedule.enabled ? ' checked' : ''}>
+                                            <span>仅在指定时间段启用拦截策略</span>
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <label for="sr-setting-schedule-start">开始时间</label>
+                                        <input id="sr-setting-schedule-start" type="time" value="${activeSchedule.start}">
+                                    </div>
+                                    <div>
+                                        <label for="sr-setting-schedule-end">结束时间</label>
+                                        <input id="sr-setting-schedule-end" type="time" value="${activeSchedule.end}">
+                                        <div class="sr-help">如 21:00 - 00:00 表示跨午夜；开始与结束相同表示全天。</div>
+                                    </div>
                                     <div>
                                         <label for="sr-setting-quota-minutes">默认每日可访问分钟数</label>
                                         <input id="sr-setting-quota-minutes" type="number" min="0" step="1" value="${getDailyQuotaMinutes()}">
@@ -1277,26 +1397,40 @@
 
         root.querySelector('#sr-settings-save').addEventListener('click', () => {
             const target = root.querySelector('#sr-setting-target').value.trim();
+            let targetUrl;
             try {
-                const url = new URL(target);
-                GM_setValue(STORAGE.redirectTarget, url.toString());
+                targetUrl = new URL(target);
             } catch (error) {
                 alert('重定向目标不是有效 URL');
                 return;
             }
-            setBlockRules(splitListInput(root.querySelector('#sr-setting-block-rules').value));
-            GM_setValue(STORAGE.allowRules, normalizeRuleList(root.querySelector('#sr-setting-allow-rules').value));
-            GM_setValue(STORAGE.dailyQuotaMinutes, Math.max(0, parseInt(root.querySelector('#sr-setting-quota-minutes').value, 10) || 0));
-            GM_setValue(STORAGE.dailyQuotaVisits, Math.max(0, parseInt(root.querySelector('#sr-setting-quota-visits').value, 10) || 0));
+            const activeScheduleStart = root.querySelector('#sr-setting-schedule-start').value;
+            const activeScheduleEnd = root.querySelector('#sr-setting-schedule-end').value;
+            if (!isValidTimeValue(activeScheduleStart) || !isValidTimeValue(activeScheduleEnd)) {
+                alert('请选择有效的生效开始和结束时间');
+                return;
+            }
+            let siteQuotaMinutes;
             try {
-                setSiteQuotaMinutesMap(parseSiteQuotaInput(root.querySelector('#sr-setting-site-quotas').value));
+                siteQuotaMinutes = parseSiteQuotaInput(root.querySelector('#sr-setting-site-quotas').value);
             } catch (error) {
                 alert(error.message);
                 return;
             }
+            GM_setValue(STORAGE.redirectTarget, targetUrl.toString());
+            setBlockRules(splitListInput(root.querySelector('#sr-setting-block-rules').value));
+            GM_setValue(STORAGE.allowRules, normalizeRuleList(root.querySelector('#sr-setting-allow-rules').value));
+            GM_setValue(STORAGE.dailyQuotaMinutes, Math.max(0, parseInt(root.querySelector('#sr-setting-quota-minutes').value, 10) || 0));
+            GM_setValue(STORAGE.dailyQuotaVisits, Math.max(0, parseInt(root.querySelector('#sr-setting-quota-visits').value, 10) || 0));
+            setSiteQuotaMinutesMap(siteQuotaMinutes);
+            GM_setValue(STORAGE.activeScheduleEnabled, root.querySelector('#sr-setting-schedule-enabled').checked);
+            GM_setValue(STORAGE.activeScheduleStart, activeScheduleStart);
+            GM_setValue(STORAGE.activeScheduleEnd, activeScheduleEnd);
             GM_setValue(STORAGE.themeMode, root.querySelector('#sr-setting-theme').value);
             GM_setValue(STORAGE.forceMode, root.querySelector('#sr-setting-force').checked);
-            alert('设置已保存，刷新页面后对当前页完全生效');
+            scheduleNextScheduleBoundaryCheck();
+            evaluateBlocking('settings-save');
+            alert('设置已保存，当前页已按新的生效策略重新判断');
         });
 
         root.querySelector('#sr-settings-export').addEventListener('click', () => {
@@ -1311,6 +1445,8 @@
             }
             try {
                 applyConfigSnapshot(JSON.parse(raw));
+                scheduleNextScheduleBoundaryCheck();
+                evaluateBlocking('settings-import');
                 root.innerHTML = getSettingsMarkup();
                 wireSettingsPanel(root);
                 alert('配置已导入');
@@ -1460,7 +1596,7 @@
             const quotaVisits = getDailyQuotaVisits();
             const siteQuotaCount = Object.keys(getSiteQuotaMinutesMap()).length;
             const quotaText = quotaMinutes || quotaVisits || siteQuotaCount ? `默认 ${quotaMinutes} 分钟 / ${quotaVisits} 次，单站点 ${siteQuotaCount} 条` : '未启用';
-            alert(`今日拦截次数：${todayTotal}\n累计拦截次数：${total}\n当前重定向目标：${getTarget()}\n拦截规则数：${getBlockRules().length}\n白名单规则数：${getAllowRules().length}\n每日配额：${quotaText}\n当前主题：${themeLabel}`);
+            alert(`今日拦截次数：${todayTotal}\n累计拦截次数：${total}\n当前重定向目标：${getTarget()}\n拦截规则数：${getBlockRules().length}\n白名单规则数：${getAllowRules().length}\n生效时间：${getActiveScheduleText()}\n每日配额：${quotaText}\n当前主题：${themeLabel}`);
         });
 
         GM_registerMenuCommand('📈 查看本周趋势', () => {
@@ -1921,6 +2057,7 @@
                     <div class="sr-panel">
                         <div class="sr-panel-title">当前判断</div>
                         <div class="sr-line"><span>成就</span><strong>${getAchievementText(stats, streakDays)}</strong></div>
+                        <div class="sr-line"><span>生效时间</span><strong>${escapeHtml(getActiveScheduleText())}</strong></div>
                         <div class="sr-line"><span>今日配额</span><strong>${getQuotaStatusText(quotaDomain)}</strong></div>
                         <div class="sr-line"><span>本周高频站点</span><strong>${topSite}</strong></div>
                         <div class="sr-line"><span>高峰时段</span><strong>${summary.topHour}:00</strong></div>
@@ -2153,7 +2290,7 @@
 
         if (isForceModeEnabled()) {
             window.addEventListener('beforeunload', (event) => {
-                if (Date.now() < session.expiresAt) {
+                if (!runtimeState.releasingBlockPage && Date.now() < session.expiresAt) {
                     event.preventDefault();
                     event.returnValue = '';
                 }
@@ -2161,11 +2298,34 @@
         }
     }
 
+    function releaseBlockPage() {
+        if (runtimeState.releasingBlockPage) {
+            return;
+        }
+        runtimeState.releasingBlockPage = true;
+        clearBlockSession(normalizedDomain);
+        window.location.reload();
+    }
+
     function evaluateBlocking(trigger) {
-        if (runtimeState.blockPageRequested || document.getElementById(ROOT_ID)) {
-            return true;
+        const blockPageMounted = Boolean(document.getElementById(ROOT_ID));
+        if (!isWithinActiveSchedule()) {
+            if (blockPageMounted) {
+                releaseBlockPage();
+                return;
+            }
+            logDebug('outside active schedule, allow access', {
+                hostname: location.hostname,
+                schedule: getActiveScheduleText(),
+                trigger
+            });
+            return;
         }
         if (!isBlockedDomain(location.hostname)) {
+            if (blockPageMounted) {
+                releaseBlockPage();
+                return;
+            }
             logDebug('hostname not blocked', {
                 hostname: location.hostname,
                 trigger
@@ -2175,6 +2335,10 @@
 
         const quotaDomain = getQuotaDomain(location.hostname);
         if (canAccessWithinQuota(quotaDomain)) {
+            if (blockPageMounted) {
+                releaseBlockPage();
+                return;
+            }
             if (!runtimeState.quotaSessionStarted) {
                 runtimeState.quotaSessionStarted = true;
                 logDebug('within quota, allow access', {
@@ -2187,6 +2351,10 @@
         }
 
         if (isBypassed(location.hostname)) {
+            if (blockPageMounted) {
+                releaseBlockPage();
+                return;
+            }
             logDebug('bypass active', {
                 hostname: location.hostname,
                 trigger
@@ -2194,6 +2362,9 @@
             return;
         }
 
+        if (runtimeState.blockPageRequested || blockPageMounted) {
+            return true;
+        }
         const existingSession = getBlockSession(normalizedDomain);
         const session = existingSession || startOrRefreshBlockSession(normalizedDomain);
         const stats = existingSession ? getCurrentBlockStats() : incrementBlockStats(normalizedDomain);
@@ -2205,6 +2376,22 @@
         });
         mountBlockPage(stats, session, quotaDomain);
         return true;
+    }
+
+    function scheduleNextScheduleBoundaryCheck() {
+        if (runtimeState.scheduleTimer !== null) {
+            window.clearTimeout(runtimeState.scheduleTimer);
+            runtimeState.scheduleTimer = null;
+        }
+        const delay = getNextScheduleBoundaryDelay();
+        if (delay === null) {
+            return;
+        }
+        runtimeState.scheduleTimer = window.setTimeout(() => {
+            runtimeState.scheduleTimer = null;
+            evaluateBlocking('schedule-boundary');
+            scheduleNextScheduleBoundaryCheck();
+        }, delay + 100);
     }
 
     function installStartupRechecks() {
@@ -2260,6 +2447,7 @@
     function main() {
         registerMenuCommands();
         installStartupRechecks();
+        scheduleNextScheduleBoundaryCheck();
         evaluateBlocking('initial');
     }
 
